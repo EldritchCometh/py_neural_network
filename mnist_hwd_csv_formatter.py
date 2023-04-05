@@ -43,8 +43,8 @@ for data in raw_testing_data:
 
 
 mnist_data = {
-    'train': training_data,
-    'test': testing_data
+    'training_samples': training_data,
+    'testing_samples': testing_data
 }
 
 
