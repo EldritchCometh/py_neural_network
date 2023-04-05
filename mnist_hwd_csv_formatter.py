@@ -50,6 +50,6 @@ mnist_data = {
 
 with open('mnist_data.pkl', 'wb') as f:
     pickle.dump(mnist_data, f)
-
+    
     
     
