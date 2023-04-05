@@ -34,14 +34,16 @@ class Node:
     def compute_activation(self):
         b_activations = [b_node.activation for b_node in self.b_nodes]
         b_weights = [b_weight.value for b_weight in self.b_weights]
-        w_sum = sum([a*w for a, w in zip(b_activations, b_weights)])
-        self.activation = self.act_func(w_sum + self.bias)
+        weighted_inputs = [a*w for a, w in zip(b_activations, b_weights)]
+        combined_inputs = sum(weighted_inputs) + self.bias
+        self.activation = self.act_func(combined_inputs)
 
     def compute_error_gradient(self):
         f_deltas = [f_node.delta for f_node in self.f_nodes]
         f_weights = [f_weight.value for f_weight in self.f_weights]
-        w_sum = sum([d*w for d, w in zip(f_deltas, f_weights)])
-        self.delta = self.deriv_func(self.activation) * w_sum
+        weighted_deltas = [d*w for d, w in zip(f_deltas, f_weights)]
+        combined_deltas = sum(weighted_deltas)
+        self.delta = self.deriv_func(self.activation) * combined_deltas
 
     def descend_bias_gradient(self, learning_rate):
         self.bias -= self.delta * learning_rate
@@ -49,7 +51,7 @@ class Node:
 
 class Architect:
 
-    def __init__(self, shape, functions):
+    def __init__(self, shape):
         self.nodes = self.build_node_layers(shape)
         self.weights = self.build_weight_layers(shape)
         self.set_node_references_in_nodes(self.nodes)
@@ -102,21 +104,24 @@ class Architect:
                     weight.b_node = b_node
                     weight.f_node = f_node
 
-    @staticmethod
-    def initialize_weight_values(w_layers, functions):
+    def initialize_weight_values(self, w_layers):
+        def he_wt_init(n): return random.gauss(0, math.sqrt(2 / n))
         for w_layer in w_layers:
             for n_weights in w_layer:
                 for weight in n_weights:
-                    weight.value = functions['weight_init'](len(w_layer))
+                    weight.value = he_wt_init(len(w_layer))
 
     @staticmethod
-    def set_act_and_deriv_funcs(n_layers, functions):
+    def set_act_and_deriv_funcs(n_layers):
+        def relu_act(x): return max(0, x)
+        def relu_deriv(x): return 1 if x > 0 else 0
+        def identity(x): return x
         for layer in n_layers[1:-1]:
             for node in layer:
-                node.act_func = functions['hidden_act']
-                node.deriv_func = functions['hidden_deriv']
+                node.act_func = relu_act
+                node.deriv_func = relu_deriv
         for node in n_layers[-1]:
-            node.act_func = functions['output_act']
+            node.act_func = identity
 
 
 class Trainer:
@@ -245,12 +250,8 @@ class NeuralNetwork:
 
 
 if __name__ == '__main__':
-    functions = {
-        'hidden_act': (lambda x: max(0, x)),
-        'hidden_deriv': (lambda x: 1 if x > 0 else 0),
-        'output_act': (lambda x: x),
-        'weight_init': (lambda n: random.gauss(0, math.sqrt(2 / n)))}
-    nn = NeuralNetwork([784, 16, 16, 10], functions)
+
+    nn = NeuralNetwork([784, 16, 16, 10])
     nn.train_network(32, 0.01, 120, 5)
 
     '''
