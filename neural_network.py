@@ -42,7 +42,7 @@ class Node:
     def compute_error_gradient(self):
         f_deltas = [f_node.delta for f_node in self.f_nodes]
         f_weights = [f_weight.value for f_weight in self.f_weights]
-        weighted_deltas = [w*d for w, d in zip(f_weights, f_deltas)]
+        weighted_deltas = [d*w for d, w in zip(f_deltas, f_weights)]
         combined_deltas = sum(weighted_deltas)
         self.delta = self.deriv_func(self.activation) * combined_deltas
 
@@ -127,14 +127,46 @@ class Architect:
             node.act_func = identity
 
 
+class NeuralNetwork:
+
+    def __init__(self, shape):
+        structure = Architect(shape)
+        self.weights = structure.weights
+        self.nodes = structure.nodes
+        self.input = []
+        self.output = []
+        self.prediction = 0
+        self.one_hot = []
+        self.train_network = Trainer(self).train_network
+
+    def set_features(self, features):
+        self.input = features
+        for node, feature in zip(self.nodes[0], features):
+            node.activation = feature
+
+    def forward_pass(self, features):
+        self.set_features(features)
+        for layer in self.nodes[1:]:
+            for node in layer:
+                node.compute_activation()
+
+    def set_predictions(self, features):
+        if not self.input == features:
+            self.forward_pass(features)
+            self.output = [n.activation for n in self.nodes[-1]]
+            self.prediction = self.output.index(max(self.output))
+            self.one_hot = [float(i == self.prediction) for i in range(10)]
+
+    def predict(self, features):
+        self.set_predictions(features)
+        return self.prediction
+
+
 class Trainer:
 
     def __init__(self, neural_network):
-        self.test_network = neural_network.test_network
-        self.nodes = neural_network.nodes
-        self.weights = neural_network.weights
-        self.forward_pass = neural_network.forward_pass
-        self.last_report = 0
+        self.nn = neural_network
+        self.eval = Evaluator(neural_network)
         self.eval_freq = 10
         self.samples = self.get_samples()
 
@@ -145,48 +177,43 @@ class Trainer:
         return mnist_data["training_samples"]
 
     def set_output_deltas(self, targets):
-        for node, target in zip(self.nodes[-1], targets):
+        for node, target in zip(self.nn.nodes[-1], targets):
             node.delta = node.activation - target
 
     def backpropagate(self, targets):
         self.set_output_deltas(targets)
-        for layer in reversed(self.nodes[1:-1]):
+        for layer in reversed(self.nn.nodes[1:-1]):
             for node in layer:
                 node.compute_error_gradient()
 
     def update_delta_sums(self):
-        for layer in self.nodes[1:]:
+        for layer in self.nn.nodes[1:]:
             for node in layer:
                 node.delta_sum += node.delta
 
     def descend_weight_gradients(self, learning_rate):
-        for layer in self.weights:
+        for layer in self.nn.weights:
             for n_weights in layer:
                 for weight in n_weights:
                     weight.descend_weight_gradient(learning_rate)
 
     def descend_bias_gradients(self, learning_rate):
-        for layer in self.nodes[1:]:
+        for layer in self.nn.nodes[1:]:
             for node in layer:
                 node.descend_bias_gradient(learning_rate)
 
     def reset_delta_sums(self):
-        for layer in self.nodes[1:]:
+        for layer in self.nn.nodes[1:]:
             for node in layer:
                 node.delta_sum = 0
 
-    def report_progress_if_interval(self, eval_freq):
-        if time.time() - self.last_report >= eval_freq:
-            print(self.test_network())
-            self.last_report = time.time()
-
     def train_network(self, learning_rate, batch_size, training_time):
-        learning_rate = learning_rate * (1/batch_size)
         start_time = time.time()
+        learning_rate /= batch_size
         while time.time() < start_time + training_time:
-            self.report_progress_if_interval(self.eval_freq)
+            self.eval.report_progress_if_interval(self.eval_freq)
             for sample in random.sample(self.samples, batch_size):
-                self.forward_pass(sample['pixels'])
+                self.nn.forward_pass(sample['pixels'])
                 self.backpropagate(sample['one_hot'])
                 self.update_delta_sums()
             self.descend_weight_gradients(learning_rate)
@@ -199,6 +226,7 @@ class Evaluator:
     def __init__(self, neural_network):
         self.nn = neural_network
         self.samples = self.get_samples()
+        self.last_report = 0
 
     @staticmethod
     def get_samples():
@@ -225,46 +253,22 @@ class Evaluator:
         avg_mse = mse_sum / num_of_samples
         return avg_acc, avg_mse
 
-
-class NeuralNetwork:
-
-    def __init__(self, shape):
-        structure = Architect(shape)
-        self.weights = structure.weights
-        self.nodes = structure.nodes
-        self.input = []
-        self.output = []
-        self.prediction = 0
-        self.one_hot = []
-        self.test_network = Evaluator(self).test_network
-        self.train_network = Trainer(self).train_network
-
-    def set_features(self, features):
-        self.input = features
-        for node, feature in zip(self.nodes[0], features):
-            node.activation = feature
-
-    def forward_pass(self, features):
-        self.set_features(features)
-        for layer in self.nodes[1:]:
-            for node in layer:
-                node.compute_activation()
-
-    def set_predictions(self, features):
-        if not self.input == features:
-            self.forward_pass(features)
-            self.output = [n.activation for n in self.nodes[-1]]
-            self.prediction = self.output.index(max(self.output))
-            self.one_hot = [float(i == self.prediction) for i in range(10)]
-
-    def predict(self, features):
-        self.set_predictions(features)
-        return self.prediction
+    def report_progress_if_interval(self, eval_freq):
+        if time.time() - self.last_report >= eval_freq:
+            print(self.test_network())
+            self.last_report = time.time()
 
 
 if __name__ == '__main__':
 
     nn = NeuralNetwork([784, 16, 16, 10])
     nn.train_network(0.1, 32, 60)
-    
-    
+
+
+'''
+I need to be able to save my weights.
+Normalize for batch size.
+Change my one hot encoded data to floats.
+Remove node references in nodes.
+'''
+
