@@ -1,9 +1,9 @@
 
 
-import math
-import random
-import pickle
-import time
+import random   # who's ready
+import pickle   # for random
+import math     # pickle
+import time     # math time?
 
 
 class Weight:
