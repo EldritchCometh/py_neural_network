@@ -14,7 +14,8 @@ class Weight:
         self.f_node = None
 
     def descend_weight_gradient(self, learning_rate):
-        self.value -= self.b_node.activation * self.f_node.delta * learning_rate
+        error_derivative = self.f_node.delta * self.b_node.activation
+        self.value -= error_derivative * learning_rate
 
 
 class Node:
@@ -46,45 +47,46 @@ class Node:
         self.delta = self.deriv_func(self.activation) * combined_deltas
 
     def descend_bias_gradient(self, learning_rate):
-        self.bias -= self.delta * learning_rate
+        error_derivative = self.delta
+        self.bias -= error_derivative * learning_rate
 
 
 class Architect:
 
     def __init__(self, shape):
-        self.nodes = self.build_node_layers(shape)
-        self.weights = self.build_weight_layers(shape)
+        self.nodes = self.build_node_structure(shape)
+        self.weights = self.build_weight_structure(shape)
         self.set_node_references_in_nodes(self.nodes)
         self.set_weight_references_in_nodes(self.nodes, self.weights)
         self.set_node_references_in_weights(self.nodes, self.weights)
-        self.initialize_weight_values(self.weights, functions)
-        self.set_act_and_deriv_funcs(self.nodes, functions)
+        self.initialize_weight_values(self.weights)
+        self.set_act_and_deriv_funcs(self.nodes)
 
     @staticmethod
-    def build_node_layers(shape):
+    def build_node_structure(shape):
         node_layers = []
         for size in shape:
             node_layers.append([Node() for _ in range(size)])
         return node_layers
 
     @staticmethod
-    def build_weight_layers(shape):
-        w_layers = []
+    def build_weight_structure(shape):
+        weight_layers = []
         for back, fore in zip(shape[:-1], shape[1:]):
             node_weights = []
             for _ in range(back):
                 node_weights.append([Weight() for z in range(fore)])
-            w_layers.append(node_weights)
-        return w_layers
+            weight_layers.append(node_weights)
+        return weight_layers
 
     @staticmethod
     def set_node_references_in_nodes(n_layers):
-        for back, fore in zip(n_layers[1:-1], n_layers[2:]):
-            for b_node in back:
-                b_node.f_nodes = fore
-        for back, fore in zip(n_layers[0:-1], n_layers[1:]):
-            for f_node in fore:
-                f_node.b_nodes = back
+        for b_n_layer, f_n_layer in zip(n_layers[1:-1], n_layers[2:]):
+            for b_node in b_n_layer:
+                b_node.f_nodes = f_n_layer
+        for b_n_layer, f_n_layer in zip(n_layers[0:-1], n_layers[1:]):
+            for f_node in f_n_layer:
+                f_node.b_nodes = b_n_layer
 
     @staticmethod
     def set_weight_references_in_nodes(n_layers, w_layers):
@@ -98,17 +100,18 @@ class Architect:
     @staticmethod
     def set_node_references_in_weights(n_layers, w_layers):
         zipped_layers = zip(n_layers[:-1], w_layers, n_layers[1:])
-        for b_node_layer, w_layer, f_node_layer in zipped_layers:
-            for b_node, node_weights in zip(b_node_layer, w_layer):
-                for weight, f_node in zip(node_weights, f_node_layer):
+        for b_n_layer, w_layer, f_n_layer in zipped_layers:
+            for b_node, weights in zip(b_n_layer, w_layer):
+                for weight, f_node in zip(weights, f_n_layer):
                     weight.b_node = b_node
                     weight.f_node = f_node
 
-    def initialize_weight_values(self, w_layers):
+    @staticmethod
+    def initialize_weight_values(w_layers):
         def he_wt_init(n): return random.gauss(0, math.sqrt(2 / n))
         for w_layer in w_layers:
-            for n_weights in w_layer:
-                for weight in n_weights:
+            for weights in w_layer:
+                for weight in weights:
                     weight.value = he_wt_init(len(w_layer))
 
     @staticmethod
@@ -116,8 +119,8 @@ class Architect:
         def relu_act(x): return max(0, x)
         def relu_deriv(x): return 1 if x > 0 else 0
         def identity(x): return x
-        for layer in n_layers[1:-1]:
-            for node in layer:
+        for n_layer in n_layers[1:-1]:
+            for node in n_layer:
                 node.act_func = relu_act
                 node.deriv_func = relu_deriv
         for node in n_layers[-1]:
@@ -131,6 +134,8 @@ class Trainer:
         self.nodes = neural_network.nodes
         self.weights = neural_network.weights
         self.forward_pass = neural_network.forward_pass
+        self.last_report = 0
+        self.eval_freq = 10
         self.samples = self.get_samples()
 
     @staticmethod
@@ -154,66 +159,68 @@ class Trainer:
             for node in layer:
                 node.delta_sum += node.delta
 
-    def descend_weight_gradients(self, l_rate):
+    def descend_weight_gradients(self, learning_rate):
         for layer in self.weights:
-            for node_weights in layer:
-                for weight in node_weights:
-                    weight.descend_weight_gradient(l_rate)
+            for n_weights in layer:
+                for weight in n_weights:
+                    weight.descend_weight_gradient(learning_rate)
 
-    def descend_bias_gradients(self, l_rate):
+    def descend_bias_gradients(self, learning_rate):
         for layer in self.nodes[1:]:
             for node in layer:
-                node.descend_bias_gradient(l_rate)
+                node.descend_bias_gradient(learning_rate)
 
     def reset_delta_sums(self):
         for layer in self.nodes[1:]:
             for node in layer:
                 node.delta_sum = 0
 
-    def train_network(self, batch_size, l_rate, train_time, eval_freq):
-        start_time, last_report = time.time(), time.time()
-        while time.time() < start_time + train_time:
+    def report_progress_if_interval(self, eval_freq):
+        if time.time() - self.last_report >= eval_freq:
+            print(self.test_network())
+            self.last_report = time.time()
+
+    def train_network(self, learning_rate, batch_size, training_time):
+        learning_rate = learning_rate * (1/batch_size)
+        start_time = time.time()
+        while time.time() < start_time + training_time:
+            self.report_progress_if_interval(self.eval_freq)
             for sample in random.sample(self.samples, batch_size):
                 self.forward_pass(sample['pixels'])
                 self.backpropagate(sample['one_hot'])
                 self.update_delta_sums()
-            self.descend_weight_gradients(l_rate)
-            self.descend_bias_gradients(l_rate)
+            self.descend_weight_gradients(learning_rate)
+            self.descend_bias_gradients(learning_rate)
             self.reset_delta_sums()
-            if time.time() - last_report > eval_freq:
-                print(self.test_network())
-                last_report = time.time()
 
 
 class Evaluator:
 
     def __init__(self, neural_network):
-        self.nodes = neural_network.nodes
-        self.forward_pass = neural_network.forward_pass
-        self.predict = neural_network.predict
+        self.nn = neural_network
         self.samples = self.get_samples()
 
     @staticmethod
     def get_samples():
         with open("mnist_data.pkl", "rb") as f:
             mnist_data = pickle.load(f)
-        return mnist_data["testing_samples"]
+        return mnist_data['testing_samples']
 
-    def get_accuracy(self, features, targets):
-        return self.predict(features) == targets
+    def get_accuracy(self, targets):
+        return targets == self.nn.one_hot
 
-    def get_ms_error(self, features, targets):
-        prediction = [float(i == self.predict(features)) for i in range(10)]
-        squared_errors = [(p - t) ** 2 for p, t in zip(prediction, targets)]
+    def get_ms_error(self, targets):
+        squared_errors = [(p-t)**2 for p, t in zip(self.nn.output, targets)]
         return sum(squared_errors) / len(targets)
 
-    def test_network(self, num_of_samples=100):
+    def test_network(self, num_of_samples=300):
         acc_sum = 0
         mse_sum = 0
         for _ in range(num_of_samples):
             sample = random.choice(self.samples)
-            acc_sum += self.get_accuracy(sample['pixels'], sample['label'])
-            mse_sum += self.get_ms_error(sample['pixels'], sample['one_hot'])
+            self.nn.set_predictions(sample['pixels'])
+            acc_sum += self.get_accuracy(sample['one_hot'])
+            mse_sum += self.get_ms_error(sample['one_hot'])
         avg_acc = acc_sum / num_of_samples
         avg_mse = mse_sum / num_of_samples
         return avg_acc, avg_mse
@@ -221,14 +228,16 @@ class Evaluator:
 
 class NeuralNetwork:
 
-    def __init__(self, shape, functions):
-        structure = Architect(shape, functions)
+    def __init__(self, shape):
+        structure = Architect(shape)
         self.weights = structure.weights
         self.nodes = structure.nodes
-        self.test_network = Evaluator(self).test_network
-        self.train_network = Trainer(self).train_network
         self.input = []
         self.output = []
+        self.prediction = 0
+        self.one_hot = []
+        self.test_network = Evaluator(self).test_network
+        self.train_network = Trainer(self).train_network
 
     def set_features(self, features):
         self.input = features
@@ -236,50 +245,26 @@ class NeuralNetwork:
             node.activation = feature
 
     def forward_pass(self, features):
-        if self.input == features:
-            return self.output
         self.set_features(features)
         for layer in self.nodes[1:]:
             for node in layer:
                 node.compute_activation()
-        self.output = [n.activation for n in self.nodes[-1]]
+
+    def set_predictions(self, features):
+        if not self.input == features:
+            self.forward_pass(features)
+            self.output = [n.activation for n in self.nodes[-1]]
+            self.prediction = self.output.index(max(self.output))
+            self.one_hot = [float(i == self.prediction) for i in range(10)]
 
     def predict(self, features):
-        self.forward_pass(features)
-        return self.output.index(max(self.output))
+        self.set_predictions(features)
+        return self.prediction
 
 
 if __name__ == '__main__':
 
     nn = NeuralNetwork([784, 16, 16, 10])
-    nn.train_network(32, 0.01, 120, 5)
-
-    '''
-    reporating frequency should be a paramater and should be time based
-    I want easier access to all of my hyperparamaters rather than searching
-    around in the code
-    I need to be able to save my weights.
-    I would like a way to train for a specified amount of time rather than 
-    for iterations
-    Eliminate delta and error duplication in output node
-    Normalize for batch size.
-    '''
-    '''
-    def get_training_prediction(self):
-        return [n.activation for n in self.n_layers[-1]]
-
-    def get_one_hot_prediction(self):
-        i_pred = self.get_int_prediction()
-        return [1 if i == i_pred else 0 for i in range(10)]
-    '''
-    '''
-    nn[1][0].b_weights = [-34.4]
-    nn[1][0].bias = 2.14
-    nn[1][1].b_weights = [-2.52]
-    nn[1][1].bias = 1.29
-    nn[2][0].b_weights = [-1.3, 2.28]
-    nn[2][0].bias = -0.58
-    nn.forward([0.5])
-    print(nn.get_training_prediction())
-    print(nn.get_human_prediction())
-    '''
+    nn.train_network(0.1, 32, 60)
+    
+    
