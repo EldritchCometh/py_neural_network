@@ -42,7 +42,7 @@ class Node:
     def compute_error_gradient(self):
         f_deltas = [f_node.delta for f_node in self.f_nodes]
         f_weights = [f_weight.value for f_weight in self.f_weights]
-        weighted_deltas = [d*w for d, w in zip(f_deltas, f_weights)]
+        weighted_deltas = [w*d for w, d in zip(f_weights, f_deltas)]
         combined_deltas = sum(weighted_deltas)
         self.delta = self.deriv_func(self.activation) * combined_deltas
 
