@@ -1,10 +1,10 @@
 
 
-import random   # who's ready
-import pickle   # for random
-import math     # pickle
+import random
+import pickle
+import math
+import time
 from datetime import datetime, timedelta
-import time     # math time?
 
 
 class Weight:
@@ -118,15 +118,24 @@ class Architect:
 
 class NeuralNetwork:
 
-    def __init__(self, shape):
-        structure = Architect(shape)
-        self.weights = structure.weights
-        self.nodes = structure.nodes
+    def __init__(self, shape, model_file=None):
+        model = self.get_model(shape, model_file)
+        self.weights = model.weights
+        self.nodes = model.nodes
         self.input = []
         self.output = []
         self.prediction = 0
         self.one_hot = []
         self.train_network = Trainer(self).train_network
+
+    @staticmethod
+    def get_model(shape, model_file):
+        if not model_file:
+            return Architect(shape)
+        else:
+            with open('models.pkl', 'rb') as f:
+                models = pickle.load(f)
+                return models[model_file]
 
     def set_features(self, features):
         self.input = features
@@ -155,9 +164,9 @@ class Trainer:
 
     def __init__(self, neural_network):
         self.nn = neural_network
-        self.samples = self.get_samples()
         self.start_time = time.time()
         self.current_time = time.time()
+        self.samples = self.get_samples()
         self.ev = Evaluator(neural_network, self)
 
     @staticmethod
@@ -201,7 +210,6 @@ class Trainer:
         adjusted_learning_rate = learning_rate / batch_size
         while self.current_time - self.start_time < training_time:
             self.current_time = time.time()
-            if self.ev.report_is_due(): self.ev.basic_report()
             for sample in random.sample(self.samples, batch_size):
                 self.nn.forward_pass(sample['pixels'])
                 self.backpropagate(sample['one_hot'])
@@ -209,7 +217,8 @@ class Trainer:
             self.descend_weight_gradients(adjusted_learning_rate)
             self.descend_bias_gradients(adjusted_learning_rate)
             self.reset_delta_sums()
-        self.ev.final_report(learning_rate, batch_size)
+            self.ev.if_report_frequency_print_basic_report()
+        self.ev.print_final_report(learning_rate, batch_size)
 
 
 class Evaluator:
@@ -228,7 +237,7 @@ class Evaluator:
             mnist_data = pickle.load(f)
         return mnist_data['testing_samples']
 
-    def is_correct_prediction(self, targets):
+    def is_accurate_prediction(self, targets):
         return targets == self.nn.one_hot
 
     def get_mean_squared_error(self, targets):
@@ -241,47 +250,45 @@ class Evaluator:
         for _ in range(num_of_samples):
             sample = random.choice(self.samples)
             self.nn.set_predictions(sample['pixels'])
-            acc_sum += self.is_correct_prediction(sample['one_hot'])
+            acc_sum += self.is_accurate_prediction(sample['one_hot'])
             mse_sum += self.get_mean_squared_error(sample['one_hot'])
         avg_acc = acc_sum / num_of_samples
         avg_mse = mse_sum / num_of_samples
         return avg_acc, avg_mse
 
-    def report_is_due(self):
-        if self.tr.current_time - self.last_report > self.report_freq:
-            self.last_report = self.tr.current_time
-            return True
-
     @staticmethod
-    def time_of_day(unix_time):
+    def format_time(unix_time):
         return datetime.fromtimestamp(unix_time).strftime("%H:%M:%S")
 
     @staticmethod
-    def elapsed(seconds):
+    def format_elapsed(seconds):
         return str(timedelta(seconds=round(seconds)))
 
-    def basic_report(self):
-        acc, mse = self.evaluate_network()
-        elapsed_time = self.elapsed(self.tr.current_time - self.tr.start_time)
-        print(f'Acc: {round(acc, 3)}, '
-              f'MSE: {round(mse, 3)}, '
-              f'Elapsed Time: {elapsed_time}')
+    def if_report_frequency_print_basic_report(self):
+        if self.tr.current_time - self.last_report > self.report_freq:
+            self.last_report = self.tr.current_time
+            acc, mse = self.evaluate_network()
+            elapsed = self.tr.current_time - self.tr.start_time
+            formatted = self.format_elapsed(elapsed)
+            print(f'Acc: {round(acc, 3)}, '
+                  f'MSE: {round(mse, 3)}, '
+                  f'Elapsed Time: {formatted}')
 
-    def final_report(self, learning_rate, batch_size):
+    def print_final_report(self, learning_rate, batch_size):
         init_acc, init_mse = self.init_report
         final_acc, final_mse = self.evaluate_network(1000)
-        print()
+        elapsed = self.format_elapsed(self.tr.current_time - self.tr.start_time)
         print('#####################  -  Final Report -  #####################')
-        print(f'Start Time: {self.time_of_day(self.tr.start_time)},',
-              f'End Time: {self.time_of_day(time.time())},',
-              f'Elapsed Time: {self.elapsed(time.time() - self.tr.start_time)}')
+        print(f'Start Time: {self.format_time(self.tr.start_time)},',
+              f'End Time: {self.format_time(time.time())},',
+              f'Elapsed Time: {elapsed}')
         print(f'Learning Rate: {round(learning_rate, 3)},',
               f'Batch Size: {batch_size},',
               f'Adj Learning Rate: {round((learning_rate / batch_size), 5)}')
-        print(f'Starting Accuracy: {round(init_acc, 3)},',
-              f'Starting Mean Squared Error: {round(init_mse, 3)}')
-        print(f'Final Accuracy:    {round(final_acc, 3)},',
-              f'Final Mean Squared Error:    {round(final_mse, 3)}')
+        print(f'Pre-training Accuracy:  {round(init_acc, 3)},',
+              f'Pre-training MSE:  {round(init_mse, 3)}')
+        print(f'Post-training Accuracy: {round(final_acc, 3)},',
+              f'Post-training MSE: {round(final_mse, 3)}')
         print('###############################################################')
 
 
@@ -293,8 +300,5 @@ if __name__ == '__main__':
 
 '''
 I need to be able to save my weights.
-Normalize for batch size.
-Change my one hot encoded data to floats.
-Remove node references in nodes.
 '''
 
