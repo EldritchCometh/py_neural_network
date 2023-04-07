@@ -3,6 +3,7 @@
 import random   # who's ready
 import pickle   # for random
 import math     # pickle
+from datetime import datetime, timedelta
 import time     # math time?
 
 
@@ -21,8 +22,6 @@ class Weight:
 class Node:
 
     def __init__(self):
-        self.f_nodes = None
-        self.b_nodes = None
         self.f_weights = None
         self.b_weights = None
         self.act_func = None
@@ -33,16 +32,16 @@ class Node:
         self.delta_sum = 0
 
     def compute_activation(self):
-        b_activations = [b_node.activation for b_node in self.b_nodes]
-        b_weights = [b_weight.value for b_weight in self.b_weights]
-        weighted_inputs = [a*w for a, w in zip(b_activations, b_weights)]
+        weights = [w.value for w in self.b_weights]
+        activations = [w.b_node.activation for w in self.b_weights]
+        weighted_inputs = [w*a for w, a in zip(weights, activations)]
         combined_inputs = sum(weighted_inputs) + self.bias
         self.activation = self.act_func(combined_inputs)
 
     def compute_error_gradient(self):
-        f_deltas = [f_node.delta for f_node in self.f_nodes]
-        f_weights = [f_weight.value for f_weight in self.f_weights]
-        weighted_deltas = [d*w for d, w in zip(f_deltas, f_weights)]
+        weights = [w.value for w in self.f_weights]
+        deltas = [w.f_node.delta for w in self.f_weights]
+        weighted_deltas = [w*d for w, d in zip(weights, deltas)]
         combined_deltas = sum(weighted_deltas)
         self.delta = self.deriv_func(self.activation) * combined_deltas
 
@@ -56,7 +55,6 @@ class Architect:
     def __init__(self, shape):
         self.nodes = self.build_node_structure(shape)
         self.weights = self.build_weight_structure(shape)
-        self.set_node_references_in_nodes(self.nodes)
         self.set_weight_references_in_nodes(self.nodes, self.weights)
         self.set_node_references_in_weights(self.nodes, self.weights)
         self.initialize_weight_values(self.weights)
@@ -78,15 +76,6 @@ class Architect:
                 node_weights.append([Weight() for z in range(fore)])
             weight_layers.append(node_weights)
         return weight_layers
-
-    @staticmethod
-    def set_node_references_in_nodes(n_layers):
-        for b_n_layer, f_n_layer in zip(n_layers[1:-1], n_layers[2:]):
-            for b_node in b_n_layer:
-                b_node.f_nodes = f_n_layer
-        for b_n_layer, f_n_layer in zip(n_layers[0:-1], n_layers[1:]):
-            for f_node in f_n_layer:
-                f_node.b_nodes = b_n_layer
 
     @staticmethod
     def set_weight_references_in_nodes(n_layers, w_layers):
@@ -166,9 +155,10 @@ class Trainer:
 
     def __init__(self, neural_network):
         self.nn = neural_network
-        self.eval = Evaluator(neural_network)
-        self.eval_freq = 10
         self.samples = self.get_samples()
+        self.start_time = time.time()
+        self.current_time = time.time()
+        self.ev = Evaluator(neural_network, self)
 
     @staticmethod
     def get_samples():
@@ -208,25 +198,29 @@ class Trainer:
                 node.delta_sum = 0
 
     def train_network(self, learning_rate, batch_size, training_time):
-        start_time = time.time()
-        learning_rate /= batch_size
-        while time.time() < start_time + training_time:
-            self.eval.report_progress_if_interval(self.eval_freq)
+        adjusted_learning_rate = learning_rate / batch_size
+        while self.current_time - self.start_time < training_time:
+            self.current_time = time.time()
+            if self.ev.report_is_due(): self.ev.basic_report()
             for sample in random.sample(self.samples, batch_size):
                 self.nn.forward_pass(sample['pixels'])
                 self.backpropagate(sample['one_hot'])
                 self.update_delta_sums()
-            self.descend_weight_gradients(learning_rate)
-            self.descend_bias_gradients(learning_rate)
+            self.descend_weight_gradients(adjusted_learning_rate)
+            self.descend_bias_gradients(adjusted_learning_rate)
             self.reset_delta_sums()
+        self.ev.final_report(learning_rate, batch_size)
 
 
 class Evaluator:
 
-    def __init__(self, neural_network):
+    def __init__(self, neural_network, trainer):
         self.nn = neural_network
-        self.samples = self.get_samples()
+        self.tr = trainer
         self.last_report = 0
+        self.report_freq = 10
+        self.samples = self.get_samples()
+        self.init_report = self.evaluate_network(1000)
 
     @staticmethod
     def get_samples():
@@ -234,35 +228,67 @@ class Evaluator:
             mnist_data = pickle.load(f)
         return mnist_data['testing_samples']
 
-    def get_accuracy(self, targets):
+    def is_correct_prediction(self, targets):
         return targets == self.nn.one_hot
 
-    def get_ms_error(self, targets):
+    def get_mean_squared_error(self, targets):
         squared_errors = [(p-t)**2 for p, t in zip(self.nn.output, targets)]
         return sum(squared_errors) / len(targets)
 
-    def test_network(self, num_of_samples=300):
+    def evaluate_network(self, num_of_samples=300):
         acc_sum = 0
         mse_sum = 0
         for _ in range(num_of_samples):
             sample = random.choice(self.samples)
             self.nn.set_predictions(sample['pixels'])
-            acc_sum += self.get_accuracy(sample['one_hot'])
-            mse_sum += self.get_ms_error(sample['one_hot'])
+            acc_sum += self.is_correct_prediction(sample['one_hot'])
+            mse_sum += self.get_mean_squared_error(sample['one_hot'])
         avg_acc = acc_sum / num_of_samples
         avg_mse = mse_sum / num_of_samples
         return avg_acc, avg_mse
 
-    def report_progress_if_interval(self, eval_freq):
-        if time.time() - self.last_report >= eval_freq:
-            print(self.test_network())
-            self.last_report = time.time()
+    def report_is_due(self):
+        if self.tr.current_time - self.last_report > self.report_freq:
+            self.last_report = self.tr.current_time
+            return True
+
+    @staticmethod
+    def time_of_day(unix_time):
+        return datetime.fromtimestamp(unix_time).strftime("%H:%M:%S")
+
+    @staticmethod
+    def elapsed(seconds):
+        return str(timedelta(seconds=round(seconds)))
+
+    def basic_report(self):
+        acc, mse = self.evaluate_network()
+        elapsed_time = self.elapsed(self.tr.current_time - self.tr.start_time)
+        print(f'Acc: {round(acc, 3)}, '
+              f'MSE: {round(mse, 3)}, '
+              f'Elapsed Time: {elapsed_time}')
+
+    def final_report(self, learning_rate, batch_size):
+        init_acc, init_mse = self.init_report
+        final_acc, final_mse = self.evaluate_network(1000)
+        print()
+        print('#####################  -  Final Report -  #####################')
+        print(f'Start Time: {self.time_of_day(self.tr.start_time)},',
+              f'End Time: {self.time_of_day(time.time())},',
+              f'Elapsed Time: {self.elapsed(time.time() - self.tr.start_time)}')
+        print(f'Learning Rate: {round(learning_rate, 3)},',
+              f'Batch Size: {batch_size},',
+              f'Adj Learning Rate: {round((learning_rate / batch_size), 5)}')
+        print(f'Starting Accuracy: {round(init_acc, 3)},',
+              f'Starting Mean Squared Error: {round(init_mse, 3)}')
+        print(f'Final Accuracy:    {round(final_acc, 3)},',
+              f'Final Mean Squared Error:    {round(final_mse, 3)}')
+        print('###############################################################')
 
 
 if __name__ == '__main__':
 
     nn = NeuralNetwork([784, 16, 16, 10])
-    nn.train_network(0.1, 32, 60)
+    nn.train_network(0.1, 32, 10)
 
 
 '''
