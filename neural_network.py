@@ -118,8 +118,9 @@ class Architect:
 
 class NeuralNetwork:
 
-    def __init__(self, shape, model_file=None):
-        model = self.get_model(shape, model_file)
+    def __init__(self, shape=None, load=None):
+        if shape: model = Architect(shape)
+        else: self.load_model(load)
         self.weights = model.weights
         self.nodes = model.nodes
         self.input = []
@@ -129,13 +130,10 @@ class NeuralNetwork:
         self.train_network = Trainer(self).train_network
 
     @staticmethod
-    def get_model(shape, model_file):
-        if not model_file:
-            return Architect(shape)
-        else:
-            with open('models.pkl', 'rb') as f:
-                models = pickle.load(f)
-                return models[model_file]
+    def load_model(model_name):
+        with open('models.pkl', 'rb') as f:
+            models = pickle.load(f)
+            return models[model_name]
 
     def set_features(self, features):
         self.input = features
@@ -175,6 +173,14 @@ class Trainer:
             mnist_data = pickle.load(f)
         return mnist_data["training_samples"]
 
+    def save_model(self, name):
+        with open('models.pkl', 'rb') as f:
+            models = pickle.load(f)
+            models[name] = {'weights': self.nn.weights, 
+                            'biases': self.nn.biases}
+        with open('models.pkl', 'wb') as f:
+            pickle.dump(models, f)
+
     def set_output_deltas(self, targets):
         for node, target in zip(self.nn.nodes[-1], targets):
             node.delta = node.activation - target
@@ -206,7 +212,7 @@ class Trainer:
             for node in layer:
                 node.delta_sum = 0
 
-    def train_network(self, learning_rate, batch_size, training_time):
+    def train_network(self, learning_rate, batch_size, training_time, name=None):
         adjusted_learning_rate = learning_rate / batch_size
         while self.current_time - self.start_time < training_time:
             self.current_time = time.time()
@@ -219,6 +225,7 @@ class Trainer:
             self.reset_delta_sums()
             self.ev.if_report_frequency_print_basic_report()
         self.ev.print_final_report(learning_rate, batch_size)
+        if name: self.save_model(name)
 
 
 class Evaluator:
