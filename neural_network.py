@@ -4,7 +4,13 @@ import random
 import pickle
 import math
 import time
+import os
 from datetime import datetime, timedelta
+
+'''
+change weight to connection
+and weight.value to connection.weight
+'''
 
 
 class Weight:
@@ -118,9 +124,9 @@ class Architect:
 
 class NeuralNetwork:
 
-    def __init__(self, shape=None, load=None):
+    def __init__(self, shape=None, name=None):
         if shape: model = Architect(shape)
-        else: self.load_model(load)
+        else: model = self.load_model(name)
         self.weights = model.weights
         self.nodes = model.nodes
         self.input = []
@@ -128,12 +134,6 @@ class NeuralNetwork:
         self.prediction = 0
         self.one_hot = []
         self.train_network = Trainer(self).train_network
-
-    @staticmethod
-    def load_model(model_name):
-        with open('models.pkl', 'rb') as f:
-            models = pickle.load(f)
-            return models[model_name]
 
     def set_features(self, features):
         self.input = features
@@ -173,14 +173,6 @@ class Trainer:
             mnist_data = pickle.load(f)
         return mnist_data["training_samples"]
 
-    def save_model(self, name):
-        with open('models.pkl', 'rb') as f:
-            models = pickle.load(f)
-            models[name] = {'weights': self.nn.weights, 
-                            'biases': self.nn.biases}
-        with open('models.pkl', 'wb') as f:
-            pickle.dump(models, f)
-
     def set_output_deltas(self, targets):
         for node, target in zip(self.nn.nodes[-1], targets):
             node.delta = node.activation - target
@@ -212,10 +204,11 @@ class Trainer:
             for node in layer:
                 node.delta_sum = 0
 
-    def train_network(self, learning_rate, batch_size, training_time, name=None):
+    def train_network(self, learning_rate, batch_size, train_time, name=None):
         adjusted_learning_rate = learning_rate / batch_size
-        while self.current_time - self.start_time < training_time:
+        while self.current_time - self.start_time < train_time:
             self.current_time = time.time()
+            self.ev.if_report_frequency_print_basic_report()
             for sample in random.sample(self.samples, batch_size):
                 self.nn.forward_pass(sample['pixels'])
                 self.backpropagate(sample['one_hot'])
@@ -223,7 +216,6 @@ class Trainer:
             self.descend_weight_gradients(adjusted_learning_rate)
             self.descend_bias_gradients(adjusted_learning_rate)
             self.reset_delta_sums()
-            self.ev.if_report_frequency_print_basic_report()
         self.ev.print_final_report(learning_rate, batch_size)
         if name: self.save_model(name)
 
@@ -299,10 +291,37 @@ class Evaluator:
         print('###############################################################')
 
 
+class ModelIO:
+
+    @staticmethod
+    def get_weights(weights):
+        return [[[w.value for w in n] for n in l] for l in weights]
+
+    @staticmethod
+    def get_biases(nodes):
+        return [[n.bias for n in l] for l in nodes]
+
+    @staticmethod
+    def set_weights(source, target):
+        for l1s, l1t in zip(source, target):
+            for l2s, l2t in zip(l1s, l1t):
+                for weight, value in zip(l2s, l2t):
+                    weight.value = value
+
+    @staticmethod
+    def set_biases():
+
+    def save_model(self, name):
+        return
+
+    def load_model(self name):
+        return
+
+
 if __name__ == '__main__':
 
     nn = NeuralNetwork([784, 16, 16, 10])
-    nn.train_network(0.1, 32, 10)
+    nn.train_network(0.1, 32, 20, 'test')
 
 
 '''
