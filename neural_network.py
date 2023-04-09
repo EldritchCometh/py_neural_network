@@ -124,9 +124,9 @@ class Architect:
 
 class NeuralNetwork:
 
-    def __init__(self, shape=None, name=None):
+    def __init__(self, shape=None, model=None):
         if shape: model = Architect(shape)
-        else: model = self.load_model(name)
+        else: model = ModelIO().load_model(model)
         self.weights = model.weights
         self.nodes = model.nodes
         self.input = []
@@ -217,7 +217,7 @@ class Trainer:
             self.descend_bias_gradients(adjusted_learning_rate)
             self.reset_delta_sums()
         self.ev.print_final_report(learning_rate, batch_size)
-        if name: self.save_model(name)
+        if name: ModelIO().save_model(self.nn, name)
 
 
 class Evaluator:
@@ -294,12 +294,12 @@ class Evaluator:
 class ModelIO:
 
     @staticmethod
-    def get_weights(weights):
-        return [[[w.value for w in n] for n in l] for l in weights]
+    def get_weights(nn):
+        return [[[w.value for w in n] for n in l] for l in nn.weights]
 
     @staticmethod
-    def get_biases(nodes):
-        return [[n.bias for n in l] for l in nodes]
+    def get_biases(nn):
+        return [[n.bias for n in l] for l in nn.nodes]
 
     @staticmethod
     def set_weights(target, source):
@@ -314,25 +314,29 @@ class ModelIO:
             for t_node, s_bias in zip(t_layer, s_layer):
                 t_node.bias = s_bias
 
-    def save_model(self, nn, name):
+    def save_model(self, nn, model):
         models = {}
         if os.path.isfile('models.pkl'):
             with open('models.pkl', 'rb') as f:
                 models = pickle.load(f)
-        models[name] = (self.get_weights(nn), self.get_biases(nn))
+        models[model] = (self.get_weights(nn), self.get_biases(nn))
         with open('models.pkl', 'wb') as f:
             pickle.dump(models, f)
 
-    def load_model(self, nn, name):
+    def load_model(self, model):
         with open('models.pkl', 'rb') as f:
             models = pickle.load(f)
-        self.set_weights(nn, models[name][0])
-        self.set_biases(nn, models[name][1])
+        shape = [len(layer) for layer in models[model][1]]
+        nn = Architect(shape)
+        self.set_weights(nn.weights, models[model][0])
+        self.set_biases(nn.nodes, models[model][1])
+        return nn
+
 
 if __name__ == '__main__':
 
-    nn = NeuralNetwork([784, 16, 16, 10])
-    nn.train_network(0.1, 32, 20, 'test')
+    nn = NeuralNetwork(model='model01')
+    nn.train_network(0.1, 32, 60, 'model01')
 
 
 '''
