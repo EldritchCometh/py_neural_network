@@ -304,8 +304,8 @@ class ModelIO:
     @staticmethod
     def set_weights(target, source):
         for t_layer, s_layer in zip(target, source):
-            for t_node, s_node in zip(t_layer, s_layer):
-                for t_weight, s_weight in zip(t_node, s_node):
+            for t_weights, s_weights in zip(t_layer, s_layer):
+                for t_weight, s_weight in zip(t_weights, s_weights):
                     t_weight.value = s_weight
 
     @staticmethod
@@ -314,24 +314,20 @@ class ModelIO:
             for t_node, s_bias in zip(t_layer, s_layer):
                 t_node.bias = s_bias
 
-
     def save_model(self, nn, name):
-        with open('models.pkl', 'wb') as f:
-            if not os.path.isfile('models.pkl'):
-                models = {name: (self.get_weights(nn), self.get_biases(nn))}
-            else:
+        models = {}
+        if os.path.isfile('models.pkl'):
+            with open('models.pkl', 'rb') as f:
                 models = pickle.load(f)
-                models[name] = (self.get_weights(nn), self.get_biases(nn))
+        models[name] = (self.get_weights(nn), self.get_biases(nn))
+        with open('models.pkl', 'wb') as f:
             pickle.dump(models, f)
 
-
-    def load_model(self, name):
-        
-
-
-        
-
-    
+    def load_model(self, nn, name):
+        with open('models.pkl', 'rb') as f:
+            models = pickle.load(f)
+        self.set_weights(nn, models[name][0])
+        self.set_biases(nn, models[name][1])
 
 if __name__ == '__main__':
 
