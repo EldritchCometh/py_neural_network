@@ -302,21 +302,36 @@ class ModelIO:
         return [[n.bias for n in l] for l in nodes]
 
     @staticmethod
-    def set_weights(source, target):
-        for l1s, l1t in zip(source, target):
-            for l2s, l2t in zip(l1s, l1t):
-                for weight, value in zip(l2s, l2t):
-                    weight.value = value
+    def set_weights(target, source):
+        for t_layer, s_layer in zip(target, source):
+            for t_node, s_node in zip(t_layer, s_layer):
+                for t_weight, s_weight in zip(t_node, s_node):
+                    t_weight.value = s_weight
 
     @staticmethod
-    def set_biases():
+    def set_biases(target, source):
+        for t_layer, s_layer in zip(target, source):
+            for t_node, s_bias in zip(t_layer, s_layer):
+                t_node.bias = s_bias
 
-    def save_model(self, name):
-        return
 
-    def load_model(self name):
-        return
+    def save_model(self, nn, name):
+        with open('models.pkl', 'wb') as f:
+            if not os.path.isfile('models.pkl'):
+                models = {name: (self.get_weights(nn), self.get_biases(nn))}
+            else:
+                models = pickle.load(f)
+                models[name] = (self.get_weights(nn), self.get_biases(nn))
+            pickle.dump(models, f)
 
+
+    def load_model(self, name):
+        
+
+
+        
+
+    
 
 if __name__ == '__main__':
 
