@@ -124,9 +124,9 @@ class Architect:
 
 class NeuralNetwork:
 
-    def __init__(self, shape=None, model=None):
+    def __init__(self, shape=None, model_name=None):
         if shape: model = Architect(shape)
-        else: model = ModelIO().load_model(model)
+        else: model = ModelIO().load_model(model_name)
         self.weights = model.weights
         self.nodes = model.nodes
         self.input = []
@@ -335,9 +335,8 @@ class ModelIO:
 
 if __name__ == '__main__':
 
-    nn = NeuralNetwork(model='model01')
-    nn.train_network(0.1, 32, 60, 'model01')
-
+    nn = NeuralNetwork([784, 16, 16, 10])
+    nn.train_network(0.1, 256, 600, 'model01')
 
 '''
 I need to be able to save my weights.
