@@ -62,7 +62,6 @@ class Architect:
         self.set_activation_and_derivative_functions_in_nodes(self.nodes)
         self.initialize_weight_values_in_connections(self.connections)
 
-
     @staticmethod
     def create_nodes(shape):
         node_layers = []
@@ -343,4 +342,3 @@ if __name__ == '__main__':
     nn = NeuralNetwork([(28*28), 16, 16, 10])
     nn.train_network(1, 32, 10)
 
-    
