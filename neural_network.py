@@ -1,5 +1,3 @@
-
-
 import random
 import pickle
 import math
@@ -16,7 +14,8 @@ class Connection:
         self.f_node = None
 
     def descend_weight_gradient(self, learning_rate):
-        self.weight -= self.b_node.activation * self.f_node.delta * learning_rate
+        delta = self.b_node.activation * self.f_node.delta
+        self.weight -= delta * learning_rate
 
 
 class Node:
