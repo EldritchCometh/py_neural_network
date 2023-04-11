@@ -7,11 +7,6 @@ import time
 import os
 from datetime import datetime, timedelta
 
-'''
-change weight to connection
-and weight.value to connection.weight
-'''
-
 
 class Connection:
 
