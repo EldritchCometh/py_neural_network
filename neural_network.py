@@ -205,18 +205,22 @@ class Trainer:
         adjusted_learning_rate = learning_rate / batch_size
         train_secs = train_mins * 60
         self.start_time = time.time()
-        while time.time() - self.start_time < train_secs:
-            self.ev.if_report_frequency_print_basic_report(self.start_time)
-            for _ in range(batch_size):
-                sample = random.choice(self.samples)
-                self.nn.forward_pass(sample['pixels'])
-                self.backpropagate(sample['one_hot'])
-                self.add_deltas_to_delta_sums()
-            self.descend_weight_gradients(adjusted_learning_rate)
-            self.descend_bias_gradients(adjusted_learning_rate)
-            self.reset_delta_sums()
-            if name: ModelIO().save_model(self.nn, name)
-        self.ev.print_final_report(learning_rate, batch_size, self.start_time)
+        try:
+            while time.time() - self.start_time < train_secs:
+                self.ev.if_report_frequency_print_basic_report(self.start_time)
+                for _ in range(batch_size):
+                    sample = random.choice(self.samples)
+                    self.nn.forward_pass(sample['pixels'])
+                    self.backpropagate(sample['one_hot'])
+                    self.add_deltas_to_delta_sums()
+                self.descend_weight_gradients(adjusted_learning_rate)
+                self.descend_bias_gradients(adjusted_learning_rate)
+                self.reset_delta_sums()
+                if name: ModelIO().save_model(self.nn, name)
+        except KeyboardInterrupt:
+            print('Training stopped early by user.')
+        finally:
+            self.ev.print_final_report(learning_rate, batch_size, self.start_time)
 
 
 class Evaluator:
