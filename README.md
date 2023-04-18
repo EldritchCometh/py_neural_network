@@ -15,13 +15,13 @@ Default funtionality, if you don't change anything in the code, is to run like t
 ```nn.train_network(1, 32, 5)```
 
 This will:
-  * Create a NeuralNetwork object with shape `[784, 16, 16, 10]`
-  * Train it with learning rate 1 and batch size 32 for 5 minutes. 
-  * Print a progress report on the console every 10 seconds and 
-  * Print a final report at the end of the 5 minutes. 
-    * The reports are tested against the totally segrigated testing data set and include
-    * accuracy of the predictions and
-    * the mean squared error measurement of loss .
+   1. Create a NeuralNetwork object with shape `[784, 16, 16, 10]`
+   2. Train it `with learning rate 1`, `batch size 32`, and `duration 5 minutes`
+   3. Print reports evert 10 seconds and at the end of 5 minutes that include:
+      - Accuracy of the predictions
+      - Mean squared error measurement of loss
+
+Try out some of your own options:
 
 Try different network shapes by changing the shape peramater in the init method of the NeuralNetwork class.
 
