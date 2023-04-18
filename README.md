@@ -9,6 +9,7 @@ There are many libraries and projects out there for optimized machine learning. 
 As a companion to the 3Blue1Brown series, I recommend watching that first or with this code open to see if you can follow along with his explanations in this code.
 <br></br>
 ## 📦 Dependancies
+Just the one.
 ```pip install pickle```
 <br></br>
 ## 🚀 Use
