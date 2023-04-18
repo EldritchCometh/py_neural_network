@@ -9,7 +9,10 @@ There are many libraries and projects out there for optimized machine learning. 
 As a companion to the 3Blue1Brown series, I recommend watching that first or with this code open to see if you can follow along with his explanations in this code.
 <br></br>
 ## 🚀 Use
-If one runs the neural_network.py script without making any changes it will make a neural network of shape [784, 16, 16, 10] and train itself on the mnist training data for 5 minutes. It will print out a progress report on the console every 10 seconds and a final report at the end of the 5 minutes. The reports will include the accuracy of the predictions and the mean squared error measurement of loss tested against the totally segrigated testing data set.
+If one runs the neural_network.py script without making any changes it will make and train a neural network as so: 
+```nn = NeuralNetwork([784, 16, 16, 10])```
+```nn.train_network(1, 32, 5)```
+It will print out a progress report on the console every 10 seconds and a final report at the end of the 5 minutes. The reports will include the accuracy of the predictions and the mean squared error measurement of loss tested against the totally segrigated testing data set.
 
 Try different network shapes by changing the shape peramater in the init method of the NeuralNetwork class.
 
