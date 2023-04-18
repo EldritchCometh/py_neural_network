@@ -18,12 +18,11 @@ If you don't change anything default functionality is to run like so:
 This will:
    * Create a NeuralNetwork object with shape `[784, 16, 16, 10]`
    * Train it `with learning rate 1`, `batch size 32`, and `duration 5 minutes` and
-   * Print reports evert 10 seconds and at the end of 5 minutes that include:
-      - Accuracy of the predictions
-      - Mean squared error measurement of loss
+   * Print reports evert 10 seconds and at the end of the 5 minute duration containing:
+      * Accuracy of the predictions
+      * Mean squared error measurement of loss
 
 ### Try out some of your own options:
-
    * Try different network shapes by changing the shape peramater of the NeuralNetwork class.
    * Try out different peramaters for `train_network()` for
       * learning rates
@@ -32,5 +31,3 @@ This will:
    * Save and load models by 
       * supplying a name to the neural_network class on instantiation to load and 
       * a name as an additional paramater of the train_network method to save.
-
-I included a script for how I formatted and packaged the raw mnist data. I recommend just using the provided pickle but the script is there if you want to prepare the data yourself.
