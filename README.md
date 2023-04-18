@@ -9,7 +9,7 @@ There are many libraries and projects out there for optimized machine learning. 
 As a companion to the 3Blue1Brown series, I recommend watching that first or with this code open to see if you can follow along with his explanations in this code.
 <br></br>
 ## 🚀 Use
-###Default funtionality: 
+### Default funtionality: 
 If you don't change anything in the code, is to run like this:
 
 ```nn = NeuralNetwork([784, 16, 16, 10])```<br>
@@ -22,7 +22,7 @@ This will:
       - Accuracy of the predictions
       - Mean squared error measurement of loss
 
-###Try out some of your own options:
+### Try out some of your own options:
 
    * Try different network shapes by changing the shape peramater in the init method of the NeuralNetwork class.
    * Try out different learning rates, batch sizes, and training times as arguments in the train_network method.
