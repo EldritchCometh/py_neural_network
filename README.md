@@ -10,7 +10,7 @@ As a companion to the 3Blue1Brown series, I recommend watching that first or wit
 <br></br>
 ## 🚀 Use
 ### Default funtionality: 
-If you don't change anything in the code, is to run like this:
+If you don't change anything default functionality is to run like so:
 
 ```nn = NeuralNetwork([784, 16, 16, 10])```<br>
 ```nn.train_network(1, 32, 5)```
