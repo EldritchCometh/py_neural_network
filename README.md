@@ -19,9 +19,9 @@ This will:
   * Train it with learning rate 1 and batch size 32 for 5 minutes. 
   * Print a progress report on the console every 10 seconds and 
   * Print a final report at the end of the 5 minutes. 
-    The reports are tested against the totally segrigated testing data set and include
-      * accuracy of the predictions and
-      * the mean squared error measurement of loss .
+    * The reports are tested against the totally segrigated testing data set and include
+    * accuracy of the predictions and
+    * the mean squared error measurement of loss .
 
 Try different network shapes by changing the shape peramater in the init method of the NeuralNetwork class.
 
