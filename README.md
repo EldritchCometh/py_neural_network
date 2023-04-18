@@ -17,7 +17,7 @@ If you don't change anything default functionality is to run like so:
 
 This will:
    * Create a NeuralNetwork object with shape `[784, 16, 16, 10]`
-   * Train it `with learning rate 1`, `batch size 32`, and `duration 5 minutes`
+   * Train it `with learning rate 1`, `batch size 32`, and `duration 5 minutes` and
    * Print reports evert 10 seconds and at the end of 5 minutes that include:
       - Accuracy of the predictions
       - Mean squared error measurement of loss
