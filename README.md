@@ -12,8 +12,7 @@ As a companion to the 3Blue1Brown series, I recommend watching that first or wit
 Default funtionality, if you don't change anything in the code, is to run like this:
 
 ```nn = NeuralNetwork([784, 16, 16, 10])```
-
-```nn.train_network(1, 32, 5)```<br>
+```nn.train_network(1, 32, 5)```
 
 This will create a NeuralNetwork object with shape `[784, 16, 16, 10]` and train it with learning rate 1, batch size 32, for 5 minutes. It will print out a progress report on the console every 10 seconds and a final report at the end of the 5 minutes. The reports will include the accuracy of the predictions and the mean squared error measurement of loss tested against the totally segrigated testing data set.
 
