@@ -10,6 +10,7 @@ As a companion to the 3Blue1Brown series, I recommend watching that first or wit
 <br></br>
 ## 📦 Dependancies
 Just the one.
+
 ```pip install pickle```
 <br></br>
 ## 🚀 Use
