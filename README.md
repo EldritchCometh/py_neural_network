@@ -12,7 +12,11 @@ As a companion to the 3Blue1Brown series, I recommend watching that first or wit
 
 ## 🚀 Use
 If you simply run the neural_network.py script it will make a neural network of shape [784, 16, 16, 10] and train itself on the mnist training data for 5 minutes. It will print out a progress report on the console every 10 seconds and a final report at the end of the 5 minutes. The reports will include the accuracy of the predictions and the mean squared error measurement of loss.
+
 Try different network shapes by changing the shape peramater in the init method of the NeuralNetwork class.
+
 Try out different learning rates, batch sizes, and training times as arguments in the train_network method.
+
 Save and load models by supplying a name to the neural_network class on instantiation to load and a name as an additional paramater of the train_network method to save.
-I included a script for how I formatted and packaged the raw mnist data. I recommend just using the provided pickle but the script is there if you want to prepare the data yourself. 
+
+I included a script for how I formatted and packaged the raw mnist data. I recommend just using the provided pickle but the script is there if you want to prepare the data yourself.
