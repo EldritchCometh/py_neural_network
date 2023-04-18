@@ -15,18 +15,16 @@ Default funtionality, if you don't change anything in the code, is to run like t
 ```nn.train_network(1, 32, 5)```
 
 This will:
-   1. Create a NeuralNetwork object with shape `[784, 16, 16, 10]`
-   2. Train it `with learning rate 1`, `batch size 32`, and `duration 5 minutes`
-   3. Print reports evert 10 seconds and at the end of 5 minutes that include:
+   * Create a NeuralNetwork object with shape `[784, 16, 16, 10]`
+   * Train it `with learning rate 1`, `batch size 32`, and `duration 5 minutes`
+   * Print reports evert 10 seconds and at the end of 5 minutes that include:
       - Accuracy of the predictions
       - Mean squared error measurement of loss
 
 Try out some of your own options:
 
-Try different network shapes by changing the shape peramater in the init method of the NeuralNetwork class.
-
-Try out different learning rates, batch sizes, and training times as arguments in the train_network method.
-
-Save and load models by supplying a name to the neural_network class on instantiation to load and a name as an additional paramater of the train_network method to save.
+   * Try different network shapes by changing the shape peramater in the init method of the NeuralNetwork class.
+   * Try out different learning rates, batch sizes, and training times as arguments in the train_network method.
+   * Save and load models by supplying a name to the neural_network class on instantiation to load and a name as an additional paramater of the train_network method to save.
 
 I included a script for how I formatted and packaged the raw mnist data. I recommend just using the provided pickle but the script is there if you want to prepare the data yourself.
