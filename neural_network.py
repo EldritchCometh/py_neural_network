@@ -7,18 +7,6 @@ import gzip
 from datetime import datetime, timedelta
 
 
-class Weight:
-
-    def __init__(self):
-        self.value = 0
-        self.source_node = None
-        self.target_node = None
-
-    def descend_weight_gradient(self, learning_rate):
-        error_derivative = self.target_node.delta_sum * self.source_node.activation
-        self.value -= error_derivative * learning_rate
-
-
 class Node:
 
     def __init__(self):
@@ -50,6 +38,18 @@ class Node:
         self.bias -= error_derivative * learning_rate
 
 
+class Connection:
+
+    def __init__(self):
+        self.value = 0
+        self.source_node = None
+        self.target_node = None
+
+    def descend_weight_gradient(self, learning_rate):
+        error_derivative = self.target_node.delta_sum * self.source_node.activation
+        self.value -= error_derivative * learning_rate
+
+
 class Architect:
 
     def __init__(self, shape):
@@ -73,7 +73,7 @@ class Architect:
         for back, fore in zip(shape[:-1], shape[1:]):
             node_weights = []
             for _ in range(back):
-                node_weights.append([Weight() for z in range(fore)])
+                node_weights.append([Connection() for z in range(fore)])
             weight_layers.append(node_weights)
         return weight_layers
 
