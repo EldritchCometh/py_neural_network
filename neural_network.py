@@ -11,19 +11,19 @@ class Weight:
 
     def __init__(self):
         self.value = 0
-        self.b_node = None
-        self.f_node = None
+        self.source_node = None
+        self.target_node = None
 
     def descend_weight_gradient(self, learning_rate):
-        error_derivative = self.f_node.delta * self.b_node.activation
+        error_derivative = self.target_node.delta_sum * self.source_node.activation
         self.value -= error_derivative * learning_rate
 
 
 class Node:
 
     def __init__(self):
-        self.f_weights = None
-        self.b_weights = None
+        self.outgoing_connections = None
+        self.incoming_connections = None
         self.act_func = None
         self.deriv_func = None
         self.activation = 0
@@ -32,21 +32,21 @@ class Node:
         self.delta_sum = 0
 
     def compute_activation(self):
-        weights = [w.value for w in self.b_weights]
-        activations = [w.b_node.activation for w in self.b_weights]
+        weights = [w.value for w in self.incoming_connections]
+        activations = [w.source_node.activation for w in self.incoming_connections]
         weighted_inputs = [w*a for w, a in zip(weights, activations)]
         combined_inputs = sum(weighted_inputs) + self.bias
         self.activation = self.act_func(combined_inputs)
 
     def compute_error_gradient(self):
-        weights = [w.value for w in self.f_weights]
-        deltas = [w.f_node.delta for w in self.f_weights]
+        weights = [w.value for w in self.outgoing_connections]
+        deltas = [w.target_node.delta for w in self.outgoing_connections]
         weighted_deltas = [w*d for w, d in zip(weights, deltas)]
         combined_deltas = sum(weighted_deltas)
         self.delta = self.deriv_func(self.activation) * combined_deltas
 
     def descend_bias_gradient(self, learning_rate):
-        error_derivative = self.delta
+        error_derivative = self.delta_sum
         self.bias -= error_derivative * learning_rate
 
 
@@ -81,19 +81,19 @@ class Architect:
     def set_weight_references_in_nodes(n_layers, w_layers):
         for n_layer, w_layer in zip(n_layers[1:-1], w_layers[1:]):
             for node, weights in zip(n_layer, w_layer):
-                node.f_weights = weights
+                node.outgoing_connections = weights
         for n_layer, w_layer in zip(n_layers[1:], w_layers):
             for i, node in enumerate(n_layer):
-                node.b_weights = [w[i] for w in w_layer]
+                node.incoming_connections = [w[i] for w in w_layer]
 
     @staticmethod
     def set_node_references_in_weights(n_layers, w_layers):
         zipped_layers = zip(n_layers[:-1], w_layers, n_layers[1:])
         for b_n_layer, w_layer, f_n_layer in zipped_layers:
-            for b_node, weights in zip(b_n_layer, w_layer):
-                for weight, f_node in zip(weights, f_n_layer):
-                    weight.b_node = b_node
-                    weight.f_node = f_node
+            for source_node, weights in zip(b_n_layer, w_layer):
+                for weight, target_node in zip(weights, f_n_layer):
+                    weight.source_node = source_node
+                    weight.target_node = target_node
 
     @staticmethod
     def initialize_weight_values(w_layers):
@@ -309,5 +309,5 @@ if __name__ == '__main__':
     # need to add back all the features obviously
     # but also need to fix places where it uses delta to accumulated delta
 
-    nn = NeuralNetwork([784, 16, 16, 10])
-    nn.train_network(1, 32, 1000)
+    nn = NeuralNetwork([784, 64, 32, 10])
+    nn.train_network(0.032, 3, 60)
