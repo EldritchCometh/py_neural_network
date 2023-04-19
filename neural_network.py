@@ -3,6 +3,7 @@ import math
 import time
 import random
 import pickle
+import gzip
 from datetime import datetime, timedelta
 
 
@@ -19,19 +20,19 @@ class Node:
         self.delta_accumulator = 0
 
     def compute_activation(self):
-        weights = [ic.weight for ic in self.in_connections]
+        weights = [ic.weight for ic in self.incoming_connections]
         activs = [ic.source_node.activation for ic in self.incoming_connections]
         weighted_sum = sum([w * a for w, a in zip(weights, activs)])
         self.activation = self.activation_function(weighted_sum + self.bias)
 
     def compute_error_gradient(self):
         weights = [oc.weight for oc in self.outgoing_connections]
-        deltas = [oc.target_node.delta for oc in self.outgoing_connections]
+        deltas = [oc.target_node.delta_accumulator for oc in self.outgoing_connections]
         weighted_sum = sum([w * d for w, d in zip(weights, deltas)])
         self.delta = self.derivative_function(self.activation) * weighted_sum
 
     def descend_bias_gradient(self, learning_rate):
-        self.bias -= self.delta * learning_rate
+        self.bias -= self.delta_accumulator * learning_rate
 
 
 class Connection:
@@ -42,7 +43,7 @@ class Connection:
         self.target_node = None
 
     def descend_weight_gradient(self, learning_rate):
-        delta = self.b_node.activation * self.f_node.delta
+        delta = self.source_node.activation * self.target_node.delta_accumulator
         self.weight -= delta * learning_rate
 
 
@@ -77,10 +78,10 @@ class Architect:
     def set_connection_references_in_nodes(node_layers, conn_layers):
         for node_layer, conn_layer in zip(node_layers[1:-1], conn_layers[1:]):
             for node, connection_group in zip(node_layer, conn_layer):
-                node.f_connections = connection_group
+                node.outgoing_connections = connection_group
         for node_layer, conn_layer in zip(node_layers[1:], conn_layers):
             for i, node in enumerate(node_layer):
-                node.b_connections = [c[i] for c in conn_layer]
+                node.incoming_connections = [c[i] for c in conn_layer]
 
     @staticmethod
     def set_node_references_in_connections(node_layers, conn_layers):
@@ -88,8 +89,8 @@ class Architect:
         for b_node_layer, conn_layer, f_node_layer in zipped_layers:
             for b_node, connection_group in zip(b_node_layer, conn_layer):
                 for connection, f_node in zip(connection_group, f_node_layer):
-                    connection.b_node = b_node
-                    connection.f_node = f_node
+                    connection.source_node = b_node
+                    connection.target_node = f_node
 
     @staticmethod
     def set_activation_and_derivative_functions_in_nodes(node_layers):
@@ -161,7 +162,7 @@ class Trainer:
 
     @staticmethod
     def get_samples():
-        with open("mnist_data.pkl", "rb") as f:
+        with gzip.open('mnist_data.pkl.gz', 'rb') as f:
             mnist_data = pickle.load(f)
         return mnist_data["training_samples"]
 
@@ -200,7 +201,7 @@ class Trainer:
         train_secs = train_mins * 60
         adjusted_learning_rate = learning_rate / batch_size
         try:
-            while time.time() - self.start_time < train_secs:
+            while time.time() - start_time < train_secs:
                 self.ev.if_report_frequency_print_basic_report(start_time)
                 for sample in random.sample(self.samples, batch_size):
                     self.nn.forward_pass(sample['pixels'])
@@ -228,7 +229,7 @@ class Evaluator:
 
     @staticmethod
     def get_samples():
-        with open("mnist_data.pkl", "rb") as f:
+        with gzip.open('mnist_data.pkl.gz', 'rb') as f:
             mnist_data = pickle.load(f)
         return mnist_data['testing_samples']
 
@@ -262,7 +263,7 @@ class Evaluator:
     def if_report_frequency_print_basic_report(self, start_time):
         if time.time() - self.last_report > self.report_freq:
             self.last_report = time.time()
-            acc, mse = self.evaluate_network(200)
+            acc, mse = self.evaluate_network(10)
             elapsed = self.elapsed(start_time, time.time())
             print(f'Acc: {round(acc, 3)}, '
                   f'MSE: {round(mse, 3)}, '
@@ -333,4 +334,3 @@ if __name__ == '__main__':
 
     nn = NeuralNetwork([(28*28), 16, 16, 10])
     nn.train_network(1, 32, 5)
-
