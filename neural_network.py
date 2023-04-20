@@ -94,9 +94,15 @@ class Architect:
 
     @staticmethod
     def set_activation_and_derivative_functions_in_nodes(node_layers):
-        def relu_activation(x): return max(0, x)
-        def relu_derivative(x): return 1 if x > 0 else 0
-        def identity(x): return x
+        def relu_activation(x):
+            return max(0, x)
+
+        def relu_derivative(x):
+            return 1 if x > 0 else 0
+
+        def identity(x):
+            return x
+
         for node_layer in node_layers[1:-1]:
             for node in node_layer:
                 node.activation_function = relu_activation
@@ -106,7 +112,9 @@ class Architect:
 
     @staticmethod
     def initialize_weight_values_in_connections(conn_layers):
-        def he_weight_init(n): return random.gauss(0, math.sqrt(2 / n))
+        def he_weight_init(n):
+            return random.gauss(0, math.sqrt(2 / n))
+
         for conn_layer in conn_layers:
             nodes_in_prev_layer = len(conn_layer)
             for conn_group in conn_layer:
@@ -116,43 +124,40 @@ class Architect:
 
 class NeuralNetwork:
 
-    def __init__(self, shape=None, name=None):
-        if shape: model = Architect(shape)
-        else: model = self.load_model(name)
-        self.connections = model.connections
-        self.nodes = model.nodes
-        self.input = []
+    def __init__(self, shape=None, model_name=None):
+        architecture = self.create_arhitecture(shape, model_name)
+        self.nodes = architecture.nodes
+        self.connections = architecture.connections
         self.output = []
-        self.prediction = 0
         self.one_hot = []
+        self.prediction = 0
         self.train_network = Trainer(self).train_network
 
     @staticmethod
-    def load_model(name):
-        with open('models.pkl', 'rb') as f:
-            models = pickle.load(f)
-            return models[name]
+    def create_arhitecture(shape, model_name):
+        if shape:
+            return Architect(shape)
+        else:
+            return ModelIO().load_model(model_name)
 
-    def set_features(self, features):
-        self.input = features
+    def update_features(self, features):
         for node, feature in zip(self.nodes[0], features):
             node.activation = feature
 
     def forward_pass(self, features):
-        self.set_features(features)
+        self.update_features(features)
         for layer in self.nodes[1:]:
             for node in layer:
                 node.compute_activation()
 
-    def set_predictions(self, features):
-        if not self.input == features:
-            self.forward_pass(features)
-            self.output = [n.activation for n in self.nodes[-1]]
-            self.prediction = self.output.index(max(self.output))
-            self.one_hot = [float(i == self.prediction) for i in range(10)]
+    def update_predictions(self, features):
+        self.forward_pass(features)
+        self.output = [n.activation for n in self.nodes[-1]]
+        self.prediction = self.output.index(max(self.output))
+        self.one_hot = [float(i == self.prediction) for i in range(10)]
 
-    def predict(self, features):
-        self.set_predictions(features)
+    def get_prediction(self, features):
+        self.update_predictions(features)
         return self.prediction
 
 
@@ -161,7 +166,7 @@ class Trainer:
     def __init__(self, neural_network):
         self.nn = neural_network
         self.samples = self.get_samples()
-        self.ev = Evaluator(neural_network, self)
+        self.ev = Evaluator(neural_network)
 
     @staticmethod
     def get_samples():
@@ -223,11 +228,10 @@ class Trainer:
 
 class Evaluator:
 
-    def __init__(self, neural_network, trainer):
+    def __init__(self, neural_network):
         self.nn = neural_network
-        self.tr = trainer
-        self.last_report = 0
         self.report_freq = 10
+        self.last_report = 0
         self.samples = self.get_samples()
         self.init_report = self.evaluate_network(1000)
 
@@ -241,15 +245,15 @@ class Evaluator:
         return targets == self.nn.one_hot
 
     def get_mean_squared_error(self, targets):
-        squared_errors = [(p-t)**2 for p, t in zip(self.nn.output, targets)]
+        squared_errors = [(p - t) ** 2 for p, t in zip(self.nn.output, targets)]
         return sum(squared_errors) / len(targets)
 
-    def evaluate_network(self, num_of_samples=300):
+    def evaluate_network(self, num_of_samples=200):
         acc_sum = 0
         mse_sum = 0
         for _ in range(num_of_samples):
             sample = random.choice(self.samples)
-            self.nn.set_predictions(sample['pixels'])
+            self.nn.update_predictions(sample['pixels'])
             acc_sum += self.is_accurate_prediction(sample['one_hot'])
             mse_sum += self.get_mean_squared_error(sample['one_hot'])
         avg_acc = acc_sum / num_of_samples
@@ -261,23 +265,22 @@ class Evaluator:
         return datetime.fromtimestamp(unix_time).strftime("%H:%M:%S")
 
     @staticmethod
-    def format_elapsed(seconds):
-        return str(timedelta(seconds=round(seconds)))
+    def elapsed(start, end):
+        return str(timedelta(seconds=round(end - start)))
 
     def if_report_frequency_print_basic_report(self, start_time):
         if time.time() - self.last_report > self.report_freq:
             self.last_report = time.time()
             acc, mse = self.evaluate_network()
-            elapsed = time.time() - start_time
-            formatted = self.format_elapsed(elapsed)
+            elapsed = self.elapsed(start_time, time.time())
             print(f'Acc: {round(acc, 3)}, '
                   f'MSE: {round(mse, 3)}, '
-                  f'Elapsed Time: {formatted}')
+                  f'Elapsed Time: {elapsed}')
 
     def print_final_report(self, learning_rate, batch_size, start_time):
         init_acc, init_mse = self.init_report
-        final_acc, final_mse = self.evaluate_network(1000)
-        elapsed = self.format_elapsed(time.time() - start_time)
+        final_acc, final_mse = self.evaluate_network(2000)
+        elapsed = self.elapsed(start_time, time.time())
         print('#####################  -  Final Report -  #####################')
         print(f'Start Time: {self.format_time(start_time)},',
               f'End Time: {self.format_time(time.time())},',
@@ -336,9 +339,5 @@ class ModelIO:
 
 
 if __name__ == '__main__':
-
-    # need to add back all the features obviously
-    # but also need to fix places where it uses delta to accumulated delta
-
     nn = NeuralNetwork([784, 64, 32, 10])
     nn.train_network(0.032, 3, 1)
