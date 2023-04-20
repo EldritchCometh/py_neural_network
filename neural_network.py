@@ -96,13 +96,10 @@ class Architect:
     def set_activation_and_derivative_functions_in_nodes(node_layers):
         def relu_activation(x):
             return max(0, x)
-
         def relu_derivative(x):
             return 1 if x > 0 else 0
-
         def identity(x):
             return x
-
         for node_layer in node_layers[1:-1]:
             for node in node_layer:
                 node.activation_function = relu_activation
@@ -114,7 +111,6 @@ class Architect:
     def initialize_weight_values_in_connections(conn_layers):
         def he_weight_init(n):
             return random.gauss(0, math.sqrt(2 / n))
-
         for conn_layer in conn_layers:
             nodes_in_prev_layer = len(conn_layer)
             for conn_group in conn_layer:
