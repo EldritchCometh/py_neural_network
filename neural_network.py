@@ -20,100 +20,98 @@ class Node:
         self.delta_accumulator = 0
 
     def compute_activation(self):
-        weights = [w.value for w in self.incoming_connections]
-        activations = [w.source_node.activation for w in self.incoming_connections]
-        weighted_inputs = [w*a for w, a in zip(weights, activations)]
-        combined_inputs = sum(weighted_inputs) + self.bias
-        self.activation = self.activation_function(combined_inputs)
+        weights = [ic.weight for ic in self.incoming_connections]
+        activs = [ic.source_node.activation for ic in self.incoming_connections]
+        weighted_sum = sum([w * a for w, a in zip(weights, activs)])
+        self.activation = self.activation_function(weighted_sum + self.bias)
 
     def compute_error_gradient(self):
-        weights = [w.value for w in self.outgoing_connections]
-        deltas = [w.target_node.delta for w in self.outgoing_connections]
-        weighted_deltas = [w*d for w, d in zip(weights, deltas)]
-        combined_deltas = sum(weighted_deltas)
-        self.delta = self.derivative_function(self.activation) * combined_deltas
+        weights = [oc.weight for oc in self.outgoing_connections]
+        deltas = [oc.target_node.delta for oc in self.outgoing_connections]
+        weighted_sum = sum([w * d for w, d in zip(weights, deltas)])
+        self.delta = self.derivative_function(self.activation) * weighted_sum
 
     def descend_bias_gradient(self, learning_rate):
-        error_derivative = self.delta_accumulator
-        self.bias -= error_derivative * learning_rate
+        self.bias -= self.delta_accumulator * learning_rate
 
 
 class Connection:
 
     def __init__(self):
-        self.value = 0
+        self.weight = 0
         self.source_node = None
         self.target_node = None
 
     def descend_weight_gradient(self, learning_rate):
-        error_derivative = self.target_node.delta_accumulator * self.source_node.activation
-        self.value -= error_derivative * learning_rate
+        delta = self.source_node.activation * self.target_node.delta_accumulator
+        self.weight -= delta * learning_rate
 
 
 class Architect:
 
     def __init__(self, shape):
-        self.nodes = self.build_node_structure(shape)
-        self.weights = self.build_weight_structure(shape)
-        self.set_weight_references_in_nodes(self.nodes, self.weights)
-        self.set_node_references_in_weights(self.nodes, self.weights)
-        self.initialize_weight_values(self.weights)
-        self.set_act_and_deriv_funcs(self.nodes)
+        self.nodes = self.create_nodes(shape)
+        self.connections = self.create_connections(shape)
+        self.set_connection_references_in_nodes(self.nodes, self.connections)
+        self.set_node_references_in_connections(self.nodes, self.connections)
+        self.set_activation_and_derivative_functions_in_nodes(self.nodes)
+        self.initialize_weight_values_in_connections(self.connections)
 
     @staticmethod
-    def build_node_structure(shape):
+    def create_nodes(shape):
         node_layers = []
         for size in shape:
             node_layers.append([Node() for _ in range(size)])
         return node_layers
 
     @staticmethod
-    def build_weight_structure(shape):
-        weight_layers = []
+    def create_connections(shape):
+        connection_layers = []
         for back, fore in zip(shape[:-1], shape[1:]):
-            node_weights = []
+            node_group = []
             for _ in range(back):
-                node_weights.append([Connection() for z in range(fore)])
-            weight_layers.append(node_weights)
-        return weight_layers
+                node_group.append([Connection() for _ in range(fore)])
+            connection_layers.append(node_group)
+        return connection_layers
 
     @staticmethod
-    def set_weight_references_in_nodes(n_layers, w_layers):
-        for n_layer, w_layer in zip(n_layers[1:-1], w_layers[1:]):
-            for node, weights in zip(n_layer, w_layer):
-                node.outgoing_connections = weights
-        for n_layer, w_layer in zip(n_layers[1:], w_layers):
-            for i, node in enumerate(n_layer):
-                node.incoming_connections = [w[i] for w in w_layer]
+    def set_connection_references_in_nodes(node_layers, conn_layers):
+        for node_layer, conn_layer in zip(node_layers[1:-1], conn_layers[1:]):
+            for node, connection_group in zip(node_layer, conn_layer):
+                node.outgoing_connections = connection_group
+        for node_layer, conn_layer in zip(node_layers[1:], conn_layers):
+            for i, node in enumerate(node_layer):
+                node.incoming_connections = [c[i] for c in conn_layer]
 
     @staticmethod
-    def set_node_references_in_weights(n_layers, w_layers):
-        zipped_layers = zip(n_layers[:-1], w_layers, n_layers[1:])
-        for b_n_layer, w_layer, f_n_layer in zipped_layers:
-            for source_node, weights in zip(b_n_layer, w_layer):
-                for weight, target_node in zip(weights, f_n_layer):
-                    weight.source_node = source_node
-                    weight.target_node = target_node
+    def set_node_references_in_connections(node_layers, conn_layers):
+        zipped_layers = zip(node_layers[:-1], conn_layers, node_layers[1:])
+        for b_node_layer, conn_layer, f_node_layer in zipped_layers:
+            for b_node, connection_group in zip(b_node_layer, conn_layer):
+                for connection, f_node in zip(connection_group, f_node_layer):
+                    connection.source_node = b_node
+                    connection.target_node = f_node
 
     @staticmethod
-    def initialize_weight_values(w_layers):
-        def he_wt_init(n): return random.gauss(0, math.sqrt(2 / n))
-        for w_layer in w_layers:
-            for weights in w_layer:
-                for weight in weights:
-                    weight.value = he_wt_init(len(w_layer))
-
-    @staticmethod
-    def set_act_and_deriv_funcs(n_layers):
-        def relu_act(x): return max(0, x)
-        def relu_deriv(x): return 1 if x > 0 else 0
+    def set_activation_and_derivative_functions_in_nodes(node_layers):
+        def relu_activation(x): return max(0, x)
+        def relu_derivative(x): return 1 if x > 0 else 0
         def identity(x): return x
-        for n_layer in n_layers[1:-1]:
-            for node in n_layer:
-                node.activation_function = relu_act
-                node.derivative_function = relu_deriv
-        for node in n_layers[-1]:
+        for node_layer in node_layers[1:-1]:
+            for node in node_layer:
+                node.activation_function = relu_activation
+                node.derivative_function = relu_derivative
+        for node in node_layers[-1]:
             node.activation_function = identity
+
+    @staticmethod
+    def initialize_weight_values_in_connections(conn_layers):
+        def he_weight_init(n): return random.gauss(0, math.sqrt(2 / n))
+        for conn_layer in conn_layers:
+            nodes_in_prev_layer = len(conn_layer)
+            for conn_group in conn_layer:
+                for connection in conn_group:
+                    connection.weight = he_weight_init(nodes_in_prev_layer)
 
 
 class NeuralNetwork:
@@ -121,7 +119,7 @@ class NeuralNetwork:
     def __init__(self, shape=None, name=None):
         if shape: model = Architect(shape)
         else: model = self.load_model(name)
-        self.weights = model.weights
+        self.weights = model.connections
         self.nodes = model.nodes
         self.input = []
         self.output = []
