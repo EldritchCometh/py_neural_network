@@ -119,7 +119,7 @@ class NeuralNetwork:
     def __init__(self, shape=None, name=None):
         if shape: model = Architect(shape)
         else: model = self.load_model(name)
-        self.weights = model.connections
+        self.connections = model.connections
         self.nodes = model.nodes
         self.input = []
         self.output = []
@@ -160,8 +160,6 @@ class Trainer:
 
     def __init__(self, neural_network):
         self.nn = neural_network
-        self.start_time = time.time()
-        self.current_time = time.time()
         self.samples = self.get_samples()
         self.ev = Evaluator(neural_network, self)
 
@@ -171,64 +169,56 @@ class Trainer:
             mnist_data = pickle.load(f)
         return mnist_data["training_samples"]
 
-    def set_output_deltas(self, targets):
+    def compute_and_set_output_deltas(self, targets):
         for node, target in zip(self.nn.nodes[-1], targets):
             node.delta = node.activation - target
 
-    def backpropagate(self, targets):
-        self.set_output_deltas(targets)
+    def backpropagate(self):
         for layer in reversed(self.nn.nodes[1:-1]):
             for node in layer:
                 node.compute_error_gradient()
 
-    def update_delta_accumulator(self):
+    def add_deltas_to_delta_accumulator(self):
         for layer in self.nn.nodes[1:]:
             for node in layer:
                 node.delta_accumulator += node.delta
 
-    def descend_weight_gradients(self, learning_rate):
-        for layer in self.nn.weights:
-            for n_weights in layer:
-                for weight in n_weights:
-                    weight.descend_weight_gradient(learning_rate)
-
-    def descend_bias_gradients(self, learning_rate):
-        for layer in self.nn.nodes[1:]:
-            for node in layer:
+    def adjust_biases_by_gradients(self, learning_rate):
+        for node_layer in self.nn.nodes[1:]:
+            for node in node_layer:
                 node.descend_bias_gradient(learning_rate)
 
-    def reset_delta_sums(self):
+    def adjust_weights_by_gradients(self, learning_rate):
+        for conn_layer in self.nn.connections:
+            for conn_group in conn_layer:
+                for connection in conn_group:
+                    connection.descend_weight_gradient(learning_rate)
+
+    def reset_delta_accumulator(self):
         for layer in self.nn.nodes[1:]:
             for node in layer:
                 node.delta_accumulator = 0
 
-    def save_model(self, name):
-        class MiniArchitect:
-            weights = None
-            biases = None
-        with open('models.pkl', 'wb') as f:
-            with open('models.pkl', 'rb') as g:
-                models = pickle.load(g)
-                mini_model = MiniArchitect()
-                mini_model.weights = self.nn.weights
-                mini_model.nodes = self.nn.nodes
-                models[name] = mini_model
-            pickle.dump(models, f)
-
-    def train_network(self, learning_rate, batch_size, train_time, name=None):
+    def train_network(self, learning_rate, batch_size, train_mins, name=None):
+        start_time = time.time()
+        train_secs = train_mins * 60
         adjusted_learning_rate = learning_rate / batch_size
-        while self.current_time - self.start_time < train_time:
-            self.current_time = time.time()
-            self.ev.if_report_frequency_print_basic_report()
-            for sample in random.sample(self.samples, batch_size):
-                self.nn.forward_pass(sample['pixels'])
-                self.backpropagate(sample['one_hot'])
-                self.update_delta_accumulator()
-            self.descend_weight_gradients(adjusted_learning_rate)
-            self.descend_bias_gradients(adjusted_learning_rate)
-            self.reset_delta_sums()
-        self.ev.print_final_report(learning_rate, batch_size)
-        if name: self.save_model(name)
+        try:
+            while time.time() - start_time < train_secs:
+                self.ev.if_report_frequency_print_basic_report(start_time)
+                for sample in random.sample(self.samples, batch_size):
+                    self.nn.forward_pass(sample['pixels'])
+                    self.compute_and_set_output_deltas(sample['one_hot'])
+                    self.backpropagate()
+                    self.add_deltas_to_delta_accumulator()
+                self.adjust_biases_by_gradients(adjusted_learning_rate)
+                self.adjust_weights_by_gradients(adjusted_learning_rate)
+                self.reset_delta_accumulator()
+                if name: ModelIO().save_model(self.nn, name)
+        except KeyboardInterrupt:
+            print('Training stopped early by user.')
+        finally:
+            self.ev.print_final_report(learning_rate, batch_size, start_time)
 
 
 class Evaluator:
@@ -274,22 +264,22 @@ class Evaluator:
     def format_elapsed(seconds):
         return str(timedelta(seconds=round(seconds)))
 
-    def if_report_frequency_print_basic_report(self):
-        if self.tr.current_time - self.last_report > self.report_freq:
-            self.last_report = self.tr.current_time
+    def if_report_frequency_print_basic_report(self, start_time):
+        if time.time() - self.last_report > self.report_freq:
+            self.last_report = time.time()
             acc, mse = self.evaluate_network()
-            elapsed = self.tr.current_time - self.tr.start_time
+            elapsed = time.time() - start_time
             formatted = self.format_elapsed(elapsed)
             print(f'Acc: {round(acc, 3)}, '
                   f'MSE: {round(mse, 3)}, '
                   f'Elapsed Time: {formatted}')
 
-    def print_final_report(self, learning_rate, batch_size):
+    def print_final_report(self, learning_rate, batch_size, start_time):
         init_acc, init_mse = self.init_report
         final_acc, final_mse = self.evaluate_network(1000)
-        elapsed = self.format_elapsed(self.tr.current_time - self.tr.start_time)
+        elapsed = self.format_elapsed(time.time() - start_time)
         print('#####################  -  Final Report -  #####################')
-        print(f'Start Time: {self.format_time(self.tr.start_time)},',
+        print(f'Start Time: {self.format_time(start_time)},',
               f'End Time: {self.format_time(time.time())},',
               f'Elapsed Time: {elapsed}')
         print(f'Learning Rate: {round(learning_rate, 3)},',
@@ -302,10 +292,53 @@ class Evaluator:
         print('###############################################################')
 
 
+class ModelIO:
+
+    @staticmethod
+    def get_weights(connections):
+        return [[[c.weight for c in g] for g in l] for l in connections]
+
+    @staticmethod
+    def get_biases(nodes):
+        return [[n.bias for n in l] for l in nodes]
+
+    @staticmethod
+    def set_weights(target, source):
+        for t_layer, s_layer in zip(target, source):
+            for t_group, s_group in zip(t_layer, s_layer):
+                for t_conn, s_weight in zip(t_group, s_group):
+                    t_conn.weight = s_weight
+
+    @staticmethod
+    def set_biases(target, source):
+        for t_layer, s_layer in zip(target, source):
+            for t_node, s_bias in zip(t_layer, s_layer):
+                t_node.bias = s_bias
+
+    def save_model(self, nn, model):
+        models = {}
+        if os.path.isfile('models.pkl'):
+            with open('models.pkl', 'rb') as f:
+                models = pickle.load(f)
+        models[model] = (self.get_biases(nn.nodes),
+                         self.get_weights(nn.connections))
+        with open('models.pkl', 'wb') as f:
+            pickle.dump(models, f)
+
+    def load_model(self, model):
+        with open('models.pkl', 'rb') as f:
+            models = pickle.load(f)
+        shape = [len(layer) for layer in models[model][1]]
+        nn = Architect(shape)
+        self.set_weights(nn.connections, models[model][0])
+        self.set_biases(nn.nodes, models[model][1])
+        return nn
+
+
 if __name__ == '__main__':
 
     # need to add back all the features obviously
     # but also need to fix places where it uses delta to accumulated delta
 
     nn = NeuralNetwork([784, 64, 32, 10])
-    nn.train_network(0.032, 3, 60)
+    nn.train_network(0.032, 3, 1)
