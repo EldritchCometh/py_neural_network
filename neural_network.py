@@ -10,31 +10,31 @@ from datetime import datetime, timedelta
 class Node:
 
     def __init__(self):
-        self.outgoing_connections = None
         self.incoming_connections = None
-        self.act_func = None
-        self.deriv_func = None
+        self.outgoing_connections = None
+        self.activation_function = None
+        self.derivative_function = None
         self.activation = 0
         self.bias = 0
         self.delta = 0
-        self.delta_sum = 0
+        self.delta_accumulator = 0
 
     def compute_activation(self):
         weights = [w.value for w in self.incoming_connections]
         activations = [w.source_node.activation for w in self.incoming_connections]
         weighted_inputs = [w*a for w, a in zip(weights, activations)]
         combined_inputs = sum(weighted_inputs) + self.bias
-        self.activation = self.act_func(combined_inputs)
+        self.activation = self.activation_function(combined_inputs)
 
     def compute_error_gradient(self):
         weights = [w.value for w in self.outgoing_connections]
         deltas = [w.target_node.delta for w in self.outgoing_connections]
         weighted_deltas = [w*d for w, d in zip(weights, deltas)]
         combined_deltas = sum(weighted_deltas)
-        self.delta = self.deriv_func(self.activation) * combined_deltas
+        self.delta = self.derivative_function(self.activation) * combined_deltas
 
     def descend_bias_gradient(self, learning_rate):
-        error_derivative = self.delta_sum
+        error_derivative = self.delta_accumulator
         self.bias -= error_derivative * learning_rate
 
 
@@ -46,7 +46,7 @@ class Connection:
         self.target_node = None
 
     def descend_weight_gradient(self, learning_rate):
-        error_derivative = self.target_node.delta_sum * self.source_node.activation
+        error_derivative = self.target_node.delta_accumulator * self.source_node.activation
         self.value -= error_derivative * learning_rate
 
 
@@ -110,10 +110,10 @@ class Architect:
         def identity(x): return x
         for n_layer in n_layers[1:-1]:
             for node in n_layer:
-                node.act_func = relu_act
-                node.deriv_func = relu_deriv
+                node.activation_function = relu_act
+                node.derivative_function = relu_deriv
         for node in n_layers[-1]:
-            node.act_func = identity
+            node.activation_function = identity
 
 
 class NeuralNetwork:
@@ -183,10 +183,10 @@ class Trainer:
             for node in layer:
                 node.compute_error_gradient()
 
-    def update_delta_sums(self):
+    def update_delta_accumulator(self):
         for layer in self.nn.nodes[1:]:
             for node in layer:
-                node.delta_sum += node.delta
+                node.delta_accumulator += node.delta
 
     def descend_weight_gradients(self, learning_rate):
         for layer in self.nn.weights:
@@ -202,7 +202,7 @@ class Trainer:
     def reset_delta_sums(self):
         for layer in self.nn.nodes[1:]:
             for node in layer:
-                node.delta_sum = 0
+                node.delta_accumulator = 0
 
     def save_model(self, name):
         class MiniArchitect:
@@ -225,7 +225,7 @@ class Trainer:
             for sample in random.sample(self.samples, batch_size):
                 self.nn.forward_pass(sample['pixels'])
                 self.backpropagate(sample['one_hot'])
-                self.update_delta_sums()
+                self.update_delta_accumulator()
             self.descend_weight_gradients(adjusted_learning_rate)
             self.descend_bias_gradients(adjusted_learning_rate)
             self.reset_delta_sums()
