@@ -7,32 +7,32 @@ import gzip
 from datetime import datetime, timedelta
 
 
-class Node:
+class Neuron:
 
     def __init__(self):
-        self.incoming_connections = None
-        self.outgoing_connections = None
-        self.activation_function = None
-        self.derivative_function = None
+        self.inc_conns = None
+        self.out_conns = None
+        self.activ_func = None
+        self.deriv_func = None
         self.activation = 0
         self.bias = 0
-        self.delta = 0
-        self.delta_accumulator = 0
+        self.error_gradient = 0
+        self.batch_gradient = 0
 
     def compute_activation(self):
-        weights = [ic.weight for ic in self.incoming_connections]
-        activs = [ic.source_node.activation for ic in self.incoming_connections]
-        weighted_sum = sum([w * a for w, a in zip(weights, activs)])
-        self.activation = self.activation_function(weighted_sum + self.bias)
+        inc_weights = [ic.weight for ic in self.inc_conns]
+        inc_activs = [ic.source_node.activation for ic in self.inc_conns]
+        weighted_sum = sum([w*a for w, a in zip(inc_weights, inc_activs)])
+        self.activation = self.activ_func(weighted_sum + self.bias)
 
     def compute_error_gradient(self):
-        weights = [oc.weight for oc in self.outgoing_connections]
-        deltas = [oc.target_node.delta for oc in self.outgoing_connections]
-        weighted_sum = sum([w * d for w, d in zip(weights, deltas)])
-        self.delta = self.derivative_function(self.activation) * weighted_sum
+        out_weights = [oc.weight for oc in self.out_conns]
+        out_err_grd = [oc.target_node.error_gradient for oc in self.out_conns]
+        weighted_sum = sum([w*d for w, d in zip(out_weights, out_err_grd)])
+        self.error_gradient = self.deriv_func(self.activation) * weighted_sum
 
-    def descend_bias_gradient(self, learning_rate):
-        self.bias -= self.delta_accumulator * learning_rate
+    def bias_gradient_descent(self, learning_rate):
+        self.bias -= self.batch_gradient * learning_rate
 
 
 class Connection:
@@ -42,26 +42,26 @@ class Connection:
         self.source_node = None
         self.target_node = None
 
-    def descend_weight_gradient(self, learning_rate):
-        delta = self.source_node.activation * self.target_node.delta_accumulator
+    def weight_gradient_descent(self, learning_rate):
+        delta = self.source_node.activation * self.target_node.batch_gradient
         self.weight -= delta * learning_rate
 
 
 class Architect:
 
     def __init__(self, shape):
-        self.nodes = self.create_nodes(shape)
+        self.neurons = self.create_nodes(shape)
         self.connections = self.create_connections(shape)
-        self.set_connection_references_in_nodes(self.nodes, self.connections)
-        self.set_node_references_in_connections(self.nodes, self.connections)
-        self.set_activation_and_derivative_functions_in_nodes(self.nodes)
+        self.set_connection_references_in_nodes(self.neurons, self.connections)
+        self.set_node_references_in_connections(self.neurons, self.connections)
+        self.set_activation_and_derivative_functions_in_nodes(self.neurons)
         self.initialize_weight_values_in_connections(self.connections)
 
     @staticmethod
     def create_nodes(shape):
         node_layers = []
         for size in shape:
-            node_layers.append([Node() for _ in range(size)])
+            node_layers.append([Neuron() for _ in range(size)])
         return node_layers
 
     @staticmethod
@@ -78,10 +78,10 @@ class Architect:
     def set_connection_references_in_nodes(node_layers, conn_layers):
         for node_layer, conn_layer in zip(node_layers[1:-1], conn_layers[1:]):
             for node, connection_group in zip(node_layer, conn_layer):
-                node.outgoing_connections = connection_group
+                node.out_conns = connection_group
         for node_layer, conn_layer in zip(node_layers[1:], conn_layers):
             for i, node in enumerate(node_layer):
-                node.incoming_connections = [c[i] for c in conn_layer]
+                node.inc_conns = [c[i] for c in conn_layer]
 
     @staticmethod
     def set_node_references_in_connections(node_layers, conn_layers):
@@ -102,10 +102,10 @@ class Architect:
             return x
         for node_layer in node_layers[1:-1]:
             for node in node_layer:
-                node.activation_function = relu_activation
-                node.derivative_function = relu_derivative
+                node.activ_func = relu_activation
+                node.deriv_func = relu_derivative
         for node in node_layers[-1]:
-            node.activation_function = identity
+            node.activ_func = identity
 
     @staticmethod
     def initialize_weight_values_in_connections(conn_layers):
@@ -122,7 +122,7 @@ class NeuralNetwork:
 
     def __init__(self, shape=None, model_name=None):
         architecture = self.create_arhitecture(shape, model_name)
-        self.nodes = architecture.nodes
+        self.neurons = architecture.neurons
         self.connections = architecture.connections
         self.output = []
         self.one_hot = []
@@ -137,18 +137,18 @@ class NeuralNetwork:
             return ModelIO().load_model(model_name)
 
     def update_features(self, features):
-        for node, feature in zip(self.nodes[0], features):
-            node.activation = feature
+        for neuron, feature in zip(self.neurons[0], features):
+            neuron.activation = feature
 
     def forward_pass(self, features):
         self.update_features(features)
-        for layer in self.nodes[1:]:
-            for node in layer:
-                node.compute_activation()
+        for layer in self.neurons[1:]:
+            for neuron in layer:
+                neuron.compute_activation()
 
     def update_predictions(self, features):
         self.forward_pass(features)
-        self.output = [n.activation for n in self.nodes[-1]]
+        self.output = [n.activation for n in self.neurons[-1]]
         self.prediction = self.output.index(max(self.output))
         self.one_hot = [float(i == self.prediction) for i in range(10)]
 
@@ -171,54 +171,53 @@ class Trainer:
         return mnist_data["training_samples"]
 
     def compute_and_set_output_deltas(self, targets):
-        for node, target in zip(self.nn.nodes[-1], targets):
-            node.delta = node.activation - target
+        for node, target in zip(self.nn.neurons[-1], targets):
+            node.error_gradient = node.activation - target
 
     def backpropagate(self):
-        for layer in reversed(self.nn.nodes[1:-1]):
+        for layer in reversed(self.nn.neurons[1:-1]):
             for node in layer:
                 node.compute_error_gradient()
 
-    def add_deltas_to_delta_accumulator(self):
-        for layer in self.nn.nodes[1:]:
+    def accumulate_error_gradient_in_batch_gradient(self):
+        for layer in self.nn.neurons[1:]:
             for node in layer:
-                node.delta_accumulator += node.delta
+                node.batch_gradient += node.error_gradient
 
     def adjust_biases_by_gradients(self, learning_rate):
-        for node_layer in self.nn.nodes[1:]:
+        for node_layer in self.nn.neurons[1:]:
             for node in node_layer:
-                node.descend_bias_gradient(learning_rate)
+                node.bias_gradient_descent(learning_rate)
 
     def adjust_weights_by_gradients(self, learning_rate):
         for conn_layer in self.nn.connections:
             for conn_group in conn_layer:
                 for connection in conn_group:
-                    connection.descend_weight_gradient(learning_rate)
+                    connection.weight_gradient_descent(learning_rate)
 
     def reset_delta_accumulator(self):
-        for layer in self.nn.nodes[1:]:
+        for layer in self.nn.neurons[1:]:
             for node in layer:
-                node.delta_accumulator = 0
+                node.batch_gradient = 0
 
     def train_network(self, learning_rate, batch_size, train_mins, name=None):
         start_time = time.time()
-        train_secs = train_mins * 60
         adjusted_learning_rate = learning_rate / batch_size
         try:
-            while time.time() - start_time < train_secs:
+            while (time.time() - start_time) / 60 < train_mins:
                 self.ev.if_report_frequency_print_basic_report(start_time)
                 for sample in random.sample(self.samples, batch_size):
                     self.nn.forward_pass(sample['pixels'])
                     self.compute_and_set_output_deltas(sample['one_hot'])
                     self.backpropagate()
-                    self.add_deltas_to_delta_accumulator()
+                    self.accumulate_error_gradient_in_batch_gradient()
                 self.adjust_biases_by_gradients(adjusted_learning_rate)
                 self.adjust_weights_by_gradients(adjusted_learning_rate)
                 self.reset_delta_accumulator()
-                if name: ModelIO().save_model(self.nn, name)
         except KeyboardInterrupt:
             print('Training stopped early by user.')
         finally:
+            if name: ModelIO().save_model(self.nn, name)
             self.ev.print_final_report(learning_rate, batch_size, start_time)
 
 
@@ -319,8 +318,9 @@ class ModelIO:
         if os.path.isfile('models.pkl'):
             with open('models.pkl', 'rb') as f:
                 models = pickle.load(f)
-        models[model] = (self.get_biases(nn.nodes),
-                         self.get_weights(nn.connections))
+        biases = self.get_biases(nn.nodes)
+        weights = self.get_weights(nn.connections)
+        models[model] = (biases, weights)
         with open('models.pkl', 'wb') as f:
             pickle.dump(models, f)
 
@@ -330,7 +330,7 @@ class ModelIO:
         shape = [len(layer) for layer in models[model][1]]
         nn = Architect(shape)
         self.set_weights(nn.connections, models[model][0])
-        self.set_biases(nn.nodes, models[model][1])
+        self.set_biases(nn.neurons, models[model][1])
         return nn
 
 
