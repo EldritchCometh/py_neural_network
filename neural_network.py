@@ -323,5 +323,5 @@ if __name__ == '__main__':
     network = Network(structure)
     evaluator = Evaluator(network, testing_samples)
     trainer = Trainer(network, training_samples, evaluator)
-    trainer.train_network(mins=60)
+    trainer.train_network(batch_size=3, mins=60)
     IO.save_model(network, 'batch_size_3')
