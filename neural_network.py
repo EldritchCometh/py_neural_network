@@ -287,8 +287,8 @@ class Trainer:
                 neuron.compute_and_update_error_gradient()
 
     def backpropagation(self, batch):
+        self.zero_out_batch_error_gradient_sums()
         for sample in batch:
-            self.zero_out_batch_error_gradient_sums()
             self.set_error_gradients_in_output_layer(sample)
             self.backpropagate()
 
@@ -323,5 +323,5 @@ if __name__ == '__main__':
     network = Network(structure)
     evaluator = Evaluator(network, testing_samples)
     trainer = Trainer(network, training_samples, evaluator)
-    trainer.train_network(batch_size=3, mins=60)
-    IO.save_model(network, 'batch_size_3')
+    trainer.train_network(batch_size=16, mins=60)
+    IO.save_model(network, 'batch_size_16')
