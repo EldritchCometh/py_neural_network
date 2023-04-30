@@ -320,9 +320,9 @@ class IO:
 if __name__ == '__main__':
 
     training_samples, testing_samples = IO.get_samples()
-
     structure = Architect.build([784, 64, 32, 10])
     network = Network(structure)
     evaluator = Evaluator(network, testing_samples)
     trainer = Trainer(network, training_samples, evaluator)
     trainer.train_network()
+    IO.save_model(network, 'model01')

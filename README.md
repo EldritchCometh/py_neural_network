@@ -13,16 +13,21 @@ As a companion to the 3Blue1Brown series, I recommend watching that first or wit
 
 ### With no changes default functionality is to run like so:
 
-```nn = NeuralNetwork([784, 16, 16, 10])```<br>
-```nn.train_network(0.032, 3, 1, 'model01')```
+```training_samples, testing_samples = IO.get_samples()```<br>
+```structure = Architect.build([784, 64, 32, 10])```<br>
+```network = Network(structure)```<br>
+```evaluator = Evaluator(network, testing_samples)```<br>
+```trainer = Trainer(network, training_samples, evaluator)```<br>
+```trainer.train_network()```<br>
+```IO.save_model(network, 'model01')```
 
 **This will:**
    * Create a `NeuralNetwork` object with shape `[784, 16, 16, 10]`
-   * Train it with `learning rate 0.032`, `batch size 3`, and `duration 1 minute`
+   * Train it with `learning rate 0.01`, `batch size 1`, and `duration 1 minute`
    * Save the model as `model01` and
-   * Print reports evert 10 seconds and at the end of the 5-minute duration containing:
+   * Print reports evert 10 seconds and at the end of the 1-minute duration containing:
       * 'Accuracy' of the predictions
-      * 'Mean squared error' measurement of loss
+      * 'Mean squared error' measurement of cost
 
 ### Try out some of your own options:
    * Try different network shapes by changing the shape parameter of the `NeuralNetwork` class.
