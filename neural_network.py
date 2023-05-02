@@ -215,6 +215,8 @@ class Evaluator:
         self.init_report = self.evaluate_network(1000)
         self.last_report = 0
         self.report_freq = 10
+        self.basic_report_samples = 100
+        self.final_report_samples = 1000
 
     def classified_accurately(self, samples):
         return samples['one_hot'] == self.nn.one_hot(samples['pixels'])
@@ -224,7 +226,8 @@ class Evaluator:
         targets = samples['one_hot']
         return sum([(o - t) ** 2 for o, t in zip(outputs, targets)])
 
-    def evaluate_network(self, num_of_samples=100):
+    def evaluate_network(self, num_of_samples):
+        test = time()
         accuracy_sum = 0
         cost_sum = 0
         for _ in range(num_of_samples):
@@ -236,17 +239,19 @@ class Evaluator:
         return accuracy_average, cost_average
 
     def basic_report(self, start_time):
-        if time() - self.last_report > self.report_freq:
+        mse = None
+        if self.report_freq and time() - self.last_report > self.report_freq:
             self.last_report = time()
-            acc, mse = self.evaluate_network()
+            acc, mse = self.evaluate_network(self.basic_report_samples)
             elapsed = timedelta(seconds=round(time() - start_time))
             print(f'Acc: {round(acc, 3)}, '
                   f'MSE: {round(mse, 3)}, '
                   f'Elapsed Time: {elapsed}')
+        return mse
 
     def final_report(self, learning_rate, batch_size, start_time):
         init_acc, init_mse = self.init_report
-        final_acc, final_mse = self.evaluate_network(1000)
+        final_acc, final_mse = self.evaluate_network(self.final_report_samples)
         start = datetime.fromtimestamp(start_time).strftime("%H:%M:%S")
         end = datetime.fromtimestamp(time()).strftime("%H:%M:%S")
         elapsed = timedelta(seconds=round(time() - start_time))
@@ -262,14 +267,16 @@ class Evaluator:
               f'Post-training Accuracy: {round(final_acc, 3)},',
               f'Post-training MSE: {round(final_mse, 3)}')
         print('###############################################################')
+        return final_mse
 
 
 class Trainer:
 
-    def __init__(self, nn, samples, ev=None):
+    def __init__(self, nn, samples, ev=None, name=None):
         self.nn = nn
         self.samples = samples
         self.ev = ev
+        self.name = name
 
     def zero_out_batch_error_gradient_sums(self):
         for layer in self.nn.neurons[1:-1]:
@@ -286,9 +293,9 @@ class Trainer:
             for neuron in layer:
                 neuron.compute_and_update_error_gradient()
 
-    def backpropagation(self, batch):
+    def backpropagation(self, mini_batch):
         self.zero_out_batch_error_gradient_sums()
-        for sample in batch:
+        for sample in mini_batch:
             self.set_error_gradients_in_output_layer(sample)
             self.backpropagate()
 
@@ -304,24 +311,31 @@ class Trainer:
                     connection.descend_weight_gradient(learning_rate)
 
     def train_network(self, learning_rate=0.01, batch_size=1, mins=1.0):
-        learning_rate /= batch_size
         start_time = time()
-        while (time() - start_time) / 60 < mins:
-            batch = random.sample(self.samples, batch_size)
-            self.backpropagation(batch)
-            self.gradient_descent(learning_rate)
-            if self.ev:
-                self.ev.basic_report(start_time)
-        if self.ev:
-            self.ev.final_report(learning_rate, batch_size, start_time)
+        max_mse = 99999
+        try:
+            while (time() - start_time) / 60 < mins:
+                mini_batch = random.sample(self.samples, batch_size)
+                self.backpropagation(mini_batch)
+                self.gradient_descent(learning_rate / batch_size)
+                if self.ev:
+                    mse = self.ev.basic_report(start_time)
+                    if mse and mse < max_mse:
+                        print('saving')
+                        IO.save_model(self.nn, self.name)
+                        max_mse = mse
+        except KeyboardInterrupt:
+            print('Training stopped early by user.')
 
 
 if __name__ == '__main__':
 
     training_samples, testing_samples = IO.get_samples()
-    structure = Architect.build([784, 64, 32, 10])
+    # structure = Architect.build([784, 16, 16, 10])
+    structure = IO.load_model('model01')
     network = Network(structure)
     evaluator = Evaluator(network, testing_samples)
-    trainer = Trainer(network, training_samples, evaluator)
-    trainer.train_network(batch_size=16, mins=60)
-    IO.save_model(network, 'batch_size_16')
+    evaluator.report_freq = 20
+    evaluator.basic_report_samples = 1000
+    trainer = Trainer(network, training_samples, evaluator, 'model01')
+    trainer.train_network(learning_rate=0.005, batch_size=1, mins=5)
