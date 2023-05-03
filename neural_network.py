@@ -175,58 +175,30 @@ class Architect:
                     connection.weight = he_weight_init(neurons_in_prev_layer)
 
 
-class Network:
-
-    def __init__(self, nn):
-        self.neurons, self.connections = nn
-        self.features = None
-
-    def set_features_in_input_layer(self):
-        for neuron, feature in zip(self.neurons[0], self.features):
-            neuron.activation = feature
-
-    def feed_forward(self):
-        for layer in self.neurons[1:]:
-            for neuron in layer:
-                neuron.compute_and_set_activation()
-
-    def output(self, features):
-        if self.features != features:
-            self.features = features
-            self.set_features_in_input_layer()
-            self.feed_forward()
-
-        return [n.activation for n in self.neurons[-1]]
-
-    def classify(self, features):
-        output = self.output(features)
-        return output.index(max(output))
-
-    def one_hot(self, features):
-        classification = self.classify(features)
-        return [float(i == classification) for i in range(10)]
-
-
 class Evaluator:
 
     def __init__(self, neural_network, samples):
         self.nn = neural_network
         self.samples = samples
-        self.init_report = self.evaluate_network(1000)
-        self.last_report = 0
+        self.init_report = self.get_metrics(1000)
+        self.last_report_time = 0
         self.report_freq = 10
-        self.basic_report_samples = 100
-        self.final_report_samples = 1000
+        self.num_of_eval_samples = 100
+        self.num_of_final_report_samples = 1000
+        self.lowest_mse = None
+        self.accuracy = None
+        self.sum_of_squared_errors = None
 
-    def classified_accurately(self, samples):
-        return samples['one_hot'] == self.nn.one_hot(samples['pixels'])
+    def get_accuracy(self, sample):
+        return sample['one_hot'] == self.nn.one_hot(sample['pixels'])
 
-    def cost_function(self, samples):
-        outputs = self.nn.output(samples['pixels'])
-        targets = samples['one_hot']
+    def get_cost(self, sample):
+        outputs = self.nn.output(self.samples['pixels'])
+        targets = sample['one_hot']
         return sum([(o - t) ** 2 for o, t in zip(outputs, targets)])
 
-    def evaluate_network(self, num_of_samples):
+    '''
+    def get_metrics(self, num_of_samples):
         test = time()
         accuracy_sum = 0
         cost_sum = 0
@@ -237,21 +209,34 @@ class Evaluator:
         accuracy_average = accuracy_sum / num_of_samples
         cost_average = cost_sum / num_of_samples
         return accuracy_average, cost_average
+    '''
 
-    def basic_report(self, start_time):
-        mse = None
-        if self.report_freq and time() - self.last_report > self.report_freq:
-            self.last_report = time()
-            acc, mse = self.evaluate_network(self.basic_report_samples)
-            elapsed = timedelta(seconds=round(time() - start_time))
-            print(f'Acc: {round(acc, 3)}, '
-                  f'MSE: {round(mse, 3)}, '
-                  f'Elapsed Time: {elapsed}')
-        return mse
+    def basic_report(self, start_time, accuracy_sum, sse):
+        elapsed = timedelta(seconds=round(time() - start_time))
+        print(f'Acc: {round(acc, 3)}, '
+              f'MSE: {round(sse, 3)}, '
+              f'Elapsed Time: {elapsed}')
+
+    def get_metrics(self):
+
+    def evaluate_network(self, start_time, model_name=None):
+        if time() - self.last_report_time >= self.report_freq:
+            self.last_report_time = time()
+            accuracy_sum, cost_sum = 0, 0
+            for _ in range(self.num_of_eval_samples):
+                sample = random.choice(self.samples)
+                accuracy_sum += self.get_accuracy(sample)
+                cost_sum += self.get_cost(sample)
+            avg_accuracy = accuracy_sum / self.num_of_eval_samples
+            avg_cost = cost_sum / self.num_of_eval_samples
+            self.basic_report(start_time, avg_accuracy, avg_cost)
+            if model_name:
+                print('Saving now.')
+                IO.save_model(self.nn, model_name)
 
     def final_report(self, learning_rate, batch_size, start_time):
         init_acc, init_mse = self.init_report
-        final_acc, final_mse = self.evaluate_network(self.final_report_samples)
+        final_acc, final_mse = self.get_metrics(self.num_of_final_report_samples)
         start = datetime.fromtimestamp(start_time).strftime("%H:%M:%S")
         end = datetime.fromtimestamp(time()).strftime("%H:%M:%S")
         elapsed = timedelta(seconds=round(time() - start_time))
@@ -267,13 +252,12 @@ class Evaluator:
               f'Post-training Accuracy: {round(final_acc, 3)},',
               f'Post-training MSE: {round(final_mse, 3)}')
         print('###############################################################')
-        return final_mse
 
 
 class Trainer:
 
-    def __init__(self, nn, samples, ev=None, name=None):
-        self.nn = nn
+    def __init__(self, neural_network, samples, ev=None, name=None):
+        self.nn = neural_network
         self.samples = samples
         self.ev = ev
         self.name = name
@@ -310,32 +294,63 @@ class Trainer:
                 for connection in conn_group:
                     connection.descend_weight_gradient(learning_rate)
 
-    def train_network(self, learning_rate=0.01, batch_size=1, mins=1.0):
+    def train_network(self, learning_rate, batch_size, mins, model_name=None):
         start_time = time()
-        max_mse = 99999
         try:
             while (time() - start_time) / 60 < mins:
                 mini_batch = random.sample(self.samples, batch_size)
                 self.backpropagation(mini_batch)
                 self.gradient_descent(learning_rate / batch_size)
-                if self.ev:
-                    mse = self.ev.basic_report(start_time)
-                    if mse and mse < max_mse:
-                        print('saving')
-                        IO.save_model(self.nn, self.name)
-                        max_mse = mse
+                if self.ev: self.ev.evaluate_network(start_time, model_name)
         except KeyboardInterrupt:
             print('Training stopped early by user.')
+        if self.ev: self.ev.final_report()
+
+class Network:
+
+    def __init__(self, shape=None, model_name=None):
+        self.neurons, self.connections = self.get_model(shape, model_name)
+        self.features = None
+
+    @staticmethod
+    def get_model(shape, model_name):
+        if model_name:
+            return IO.load_model(model_name)
+        elif shape:
+            return Architect.build(shape)
+        else:
+            raise ValueError('Must supply either a shape or model_name.')
+
+    def set_features_in_input_layer(self):
+        for neuron, feature in zip(self.neurons[0], self.features):
+            neuron.activation = feature
+
+    def feed_forward(self):
+        for layer in self.neurons[1:]:
+            for neuron in layer:
+                neuron.compute_and_set_activation()
+
+    def output(self, features):
+        if self.features != features:
+            self.features = features
+            self.set_features_in_input_layer()
+            self.feed_forward()
+
+        return [n.activation for n in self.neurons[-1]]
+
+    def classify(self, features):
+        output = self.output(features)
+        return output.index(max(output))
+
+    def one_hot(self, features):
+        classification = self.classify(features)
+        return [float(i == classification) for i in range(10)]
 
 
 if __name__ == '__main__':
 
     training_samples, testing_samples = IO.get_samples()
-    # structure = Architect.build([784, 16, 16, 10])
-    structure = IO.load_model('model01')
-    network = Network(structure)
+    network = Network(shape=[784, 16, 16, 10])
     evaluator = Evaluator(network, testing_samples)
-    evaluator.report_freq = 20
-    evaluator.basic_report_samples = 1000
-    trainer = Trainer(network, training_samples, evaluator, 'model01')
-    trainer.train_network(learning_rate=0.005, batch_size=1, mins=5)
+    trainer = Trainer(network, evaluator, training_samples)
+    trainer.train_network(0.01, 3, 1, 'model01')
