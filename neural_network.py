@@ -185,9 +185,7 @@ class Evaluator:
         self.report_freq = 10
         self.num_of_eval_samples = 100
         self.num_of_final_report_samples = 1000
-        self.lowest_mse = None
-        self.accuracy = None
-        self.sum_of_squared_errors = None
+        self.best_avg_cost = self.init_report[1]
 
     def get_accuracy(self, sample):
         return sample['one_hot'] == self.nn.one_hot(sample['pixels'])
@@ -197,40 +195,28 @@ class Evaluator:
         targets = sample['one_hot']
         return sum([(o - t) ** 2 for o, t in zip(outputs, targets)])
 
-    '''
-    def get_metrics(self, num_of_samples):
-        test = time()
-        accuracy_sum = 0
-        cost_sum = 0
-        for _ in range(num_of_samples):
-            sample = random.choice(self.samples)
-            accuracy_sum += self.classified_accurately(sample)
-            cost_sum += self.cost_function(sample)
-        accuracy_average = accuracy_sum / num_of_samples
-        cost_average = cost_sum / num_of_samples
-        return accuracy_average, cost_average
-    '''
-
-    def basic_report(self, start_time, accuracy_sum, sse):
+    def print_basic_report(self, start_time, avg_accuracy, avg_cost):
         elapsed = timedelta(seconds=round(time() - start_time))
-        print(f'Acc: {round(acc, 3)}, '
-              f'MSE: {round(sse, 3)}, '
+        print(f'Acc: {round(avg_accuracy, 3)}, '
+              f'MSE: {round(avg_cost, 3)}, '
               f'Elapsed Time: {elapsed}')
 
-    def get_metrics(self):
+    def get_metrics(self, num_of_samples):
+        accuracy_sum, cost_sum = 0, 0
+        for _ in range(num_of_samples):
+            sample = random.choice(self.samples)
+            accuracy_sum += self.get_accuracy(sample)
+            cost_sum += self.get_cost(sample)
+        avg_accuracy = accuracy_sum / self.num_of_samples
+        avg_cost = cost_sum / self.num_of_samples
+        return avg_accuracy, avg_cost
 
     def evaluate_network(self, start_time, model_name=None):
         if time() - self.last_report_time >= self.report_freq:
             self.last_report_time = time()
-            accuracy_sum, cost_sum = 0, 0
-            for _ in range(self.num_of_eval_samples):
-                sample = random.choice(self.samples)
-                accuracy_sum += self.get_accuracy(sample)
-                cost_sum += self.get_cost(sample)
-            avg_accuracy = accuracy_sum / self.num_of_eval_samples
-            avg_cost = cost_sum / self.num_of_eval_samples
-            self.basic_report(start_time, avg_accuracy, avg_cost)
-            if model_name:
+            avg_accuracy, avg_cost = self.get_metrics(self.num_of_eval_samples)
+            self.print_basic_report(start_time, avg_accuracy, avg_cost)
+            if model_name and avg_cost < self.best_avg_cost:
                 print('Saving now.')
                 IO.save_model(self.nn, model_name)
 
@@ -284,11 +270,9 @@ class Trainer:
             self.backpropagate()
 
     def gradient_descent(self, learning_rate):
-        # Adjust biases by gradient descent
         for neuron_layer in self.nn.neurons[1:]:
             for neuron in neuron_layer:
                 neuron.descend_bias_gradient(learning_rate)
-        # Adjust weights by gradient descent
         for conn_layer in self.nn.connections:
             for conn_group in conn_layer:
                 for connection in conn_group:
@@ -335,7 +319,6 @@ class Network:
             self.features = features
             self.set_features_in_input_layer()
             self.feed_forward()
-
         return [n.activation for n in self.neurons[-1]]
 
     def classify(self, features):
