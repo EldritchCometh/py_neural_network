@@ -201,7 +201,7 @@ class Evaluator:
         return sample['one_hot'] == self.nn.one_hot(sample['pixels'])
 
     def get_cost(self, sample):
-        outputs = self.nn.output(self.samples['pixels'])
+        outputs = self.nn.output(sample['pixels'])
         targets = sample['one_hot']
         return sum([(o - t) ** 2 for o, t in zip(outputs, targets)])
 
@@ -211,17 +211,18 @@ class Evaluator:
             sample = random.choice(self.samples)
             accuracy_sum += self.get_accuracy(sample)
             cost_sum += self.get_cost(sample)
-        self.accuracy = accuracy_sum / self.num_of_samples
-        self.cost = cost_sum / self.num_of_samples
+        self.accuracy = accuracy_sum / num_of_samples
+        self.cost = cost_sum / num_of_samples
 
     def evaluate_network(self, start_time, model_name=None):
         if time() - self.last_report_time >= self.report_freq:
             self.set_metrics(self.num_of_eval_samples)
             self.print_basic_report(start_time)
-            if model_name and self.cost < self.lowest_cost:
-                print('Saving now.')
-                IO.save_model(self.nn, model_name)
             self.last_report_time = time()
+            if model_name and self.cost < self.lowest_cost:
+                IO.save_model(self.nn, model_name)
+                print('Saved')
+                self.lowest_cost = self.cost
 
     def final_report(self, learning_rate, batch_size, start_time):
         self.set_metrics(self.num_of_final_report_samples)
@@ -290,7 +291,7 @@ class Trainer:
                 if self.ev: self.ev.evaluate_network(start_time, model_name)
         except KeyboardInterrupt:
             print('Training stopped early by user.')
-        if self.ev: self.ev.final_report()
+        if self.ev: self.ev.final_report(learning_rate, start_time, batch_size)
 
 class Network:
 
@@ -335,7 +336,8 @@ class Network:
 if __name__ == '__main__':
 
     training_samples, testing_samples = IO.get_samples()
-    network = Network(shape=[784, 16, 16, 10])
+    #network = Network(shape=[784, 16, 16, 10])
+    network = Network(model_name='model01')
     evaluator = Evaluator(network, testing_samples)
-    trainer = Trainer(network, evaluator, training_samples)
+    trainer = Trainer(network, training_samples, evaluator)
     trainer.train_network(0.01, 3, 1, 'model01')
