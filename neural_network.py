@@ -180,12 +180,22 @@ class Evaluator:
     def __init__(self, neural_network, samples):
         self.nn = neural_network
         self.samples = samples
-        self.init_report = self.get_metrics(1000)
+        self.accuracy = None
+        self.cost = None
+        self.set_metrics(1000)
+        self.init_accuracy = self.accuracy
+        self.init_cost = self.cost
+        self.lowest_cost = self.cost
         self.last_report_time = 0
         self.report_freq = 10
         self.num_of_eval_samples = 100
-        self.num_of_final_report_samples = 1000
-        self.best_avg_cost = self.init_report[1]
+        self.num_of_final_report_samples = 1000 
+
+    def print_basic_report(self, start_time):
+        elapsed = timedelta(seconds=round(time() - start_time))
+        print(f'Acc: {round(self.accuracy, 3)}, '
+              f'SSE: {round(self.cost, 3)}, '
+              f'Elapsed Time: {elapsed}')
 
     def get_accuracy(self, sample):
         return sample['one_hot'] == self.nn.one_hot(sample['pixels'])
@@ -195,34 +205,26 @@ class Evaluator:
         targets = sample['one_hot']
         return sum([(o - t) ** 2 for o, t in zip(outputs, targets)])
 
-    def print_basic_report(self, start_time, avg_accuracy, avg_cost):
-        elapsed = timedelta(seconds=round(time() - start_time))
-        print(f'Acc: {round(avg_accuracy, 3)}, '
-              f'MSE: {round(avg_cost, 3)}, '
-              f'Elapsed Time: {elapsed}')
-
-    def get_metrics(self, num_of_samples):
+    def set_metrics(self, num_of_samples):
         accuracy_sum, cost_sum = 0, 0
         for _ in range(num_of_samples):
             sample = random.choice(self.samples)
             accuracy_sum += self.get_accuracy(sample)
             cost_sum += self.get_cost(sample)
-        avg_accuracy = accuracy_sum / self.num_of_samples
-        avg_cost = cost_sum / self.num_of_samples
-        return avg_accuracy, avg_cost
+        self.accuracy = accuracy_sum / self.num_of_samples
+        self.cost = cost_sum / self.num_of_samples
 
     def evaluate_network(self, start_time, model_name=None):
         if time() - self.last_report_time >= self.report_freq:
-            self.last_report_time = time()
-            avg_accuracy, avg_cost = self.get_metrics(self.num_of_eval_samples)
-            self.print_basic_report(start_time, avg_accuracy, avg_cost)
-            if model_name and avg_cost < self.best_avg_cost:
+            self.set_metrics(self.num_of_eval_samples)
+            self.print_basic_report(start_time)
+            if model_name and self.cost < self.lowest_cost:
                 print('Saving now.')
                 IO.save_model(self.nn, model_name)
+            self.last_report_time = time()
 
     def final_report(self, learning_rate, batch_size, start_time):
-        init_acc, init_mse = self.init_report
-        final_acc, final_mse = self.get_metrics(self.num_of_final_report_samples)
+        self.set_metrics(self.num_of_final_report_samples)
         start = datetime.fromtimestamp(start_time).strftime("%H:%M:%S")
         end = datetime.fromtimestamp(time()).strftime("%H:%M:%S")
         elapsed = timedelta(seconds=round(time() - start_time))
@@ -233,10 +235,10 @@ class Evaluator:
               f'Learning Rate: {round(learning_rate, 3)},',
               f'Batch Size: {batch_size},',
               f'Adj Learning Rate: {round((learning_rate / batch_size), 5)}\n'
-              f'Pre-training Accuracy:  {round(init_acc, 3)},',
-              f'Pre-training MSE:  {round(init_mse, 3)}\n'
-              f'Post-training Accuracy: {round(final_acc, 3)},',
-              f'Post-training MSE: {round(final_mse, 3)}')
+              f'Pre-training Accuracy:  {round(self.init_accuracy, 3)},',
+              f'Pre-training SSE:  {round(self.init_cost, 3)}\n'
+              f'Post-training Accuracy: {round(self.accuracy, 3)},',
+              f'Post-training SSE: {round(self.cost, 3)}')
         print('###############################################################')
 
 
