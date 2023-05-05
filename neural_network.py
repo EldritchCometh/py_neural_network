@@ -47,6 +47,7 @@ class IO:
         models[model_name] = (biases, weights)
         with open('models.pkl', 'wb') as f:
             pickle.dump(models, f)
+        print('Saved!')
 
     @classmethod
     def load_model(cls, model_name):
@@ -182,20 +183,7 @@ class Evaluator:
         self.samples = samples
         self.accuracy = None
         self.cost = None
-        self.set_metrics(1000)
-        self.print_basic_report(time())
-        self.last_report_time = time()
-        self.init_accuracy = self.accuracy
-        self.init_cost = self.cost
-        self.lowest_cost = self.cost
-        self.report_freq = 20
-        self.num_of_eval_samples = 1000
-
-    def print_basic_report(self, start_time):
-        elapsed = timedelta(seconds=round(time() - start_time))
-        print(f'Acc: {round(self.accuracy, 3)}, '
-              f'SSE: {round(self.cost, 3)}, '
-              f'Elapsed Time: {elapsed}')
+        self.num_of_eval_samples = len(samples)
 
     def classified_correctly(self, sample):
         return sample['one_hot'] == self.nn.one_hot(sample['pixels'])
@@ -205,51 +193,34 @@ class Evaluator:
         targets = sample['one_hot']
         return sum([(o - t) ** 2 for o, t in zip(outputs, targets)])
 
-    def set_metrics(self, num_of_samples):
+    def print_report(self, start_time):
+        elapsed = 'N/A'
+        if start_time:
+            elapsed = timedelta(seconds=round(time() - start_time))
+        print(f'Acc: {round(self.accuracy, 3)}, '
+              f'Cost: {round(self.cost, 3)}, '
+              f'Elapsed Time: {elapsed}')
+
+    def evaluate_network(self, start_time=None):
         accuracy_sum, cost_sum = 0, 0
-        for _ in range(num_of_samples):
+        for _ in range(self.num_of_eval_samples):
             sample = random.choice(self.samples)
             accuracy_sum += self.classified_correctly(sample)
             cost_sum += self.cost_function(sample)
-        self.accuracy = accuracy_sum / num_of_samples
-        self.cost = cost_sum / num_of_samples
-
-    def evaluate_network(self, start_time, model_name=None):
-        if time() - self.last_report_time >= self.report_freq:
-            self.set_metrics(self.num_of_eval_samples)
-            self.print_basic_report(start_time)
-            self.last_report_time = time()
-            if model_name and self.cost < self.lowest_cost:
-                IO.save_model(self.nn, model_name)
-                print('Saved')
-                self.lowest_cost = self.cost
-
-    def final_report(self, learning_rate, batch_size, start_time):
-        self.set_metrics(self.num_of_eval_samples)
-        start = datetime.fromtimestamp(start_time).strftime("%H:%M:%S")
-        end = datetime.fromtimestamp(time()).strftime("%H:%M:%S")
-        elapsed = timedelta(seconds=round(time() - start_time))
-        print('#####################  -  Final Report -  #####################')
-        print(f'Start Time: {start},',
-              f'End Time: {end},',
-              f'Elapsed Time: {elapsed}\n'
-              f'Learning Rate: {round(learning_rate, 3)},',
-              f'Batch Size: {batch_size},',
-              f'Adj Learning Rate: {round((learning_rate / batch_size), 5)}\n'
-              f'Pre-training Accuracy:  {round(self.init_accuracy, 3)},',
-              f'Pre-training SSE:  {round(self.init_cost, 3)}\n'
-              f'Post-training Accuracy: {round(self.accuracy, 3)},',
-              f'Post-training SSE: {round(self.cost, 3)}')
-        print('###############################################################')
+        self.accuracy = accuracy_sum / self.num_of_eval_samples
+        self.cost = cost_sum / self.num_of_eval_samples
+        self.print_report(start_time)
+        return self.cost
 
 
 class Trainer:
 
-    def __init__(self, neural_network, samples, ev=None, name=None):
+    def __init__(self, neural_network, evaluator, samples, model_name):
         self.nn = neural_network
         self.samples = samples
-        self.ev = ev
-        self.name = name
+        self.ev = evaluator
+        self.model_name = model_name
+        self.training_mins = None
 
     def zero_out_batch_gradient_sums(self):
         for layer in self.nn.neurons[1:-1]:
@@ -276,33 +247,51 @@ class Trainer:
                 for connection in conn_group:
                     connection.descend_weight_gradient(learning_rate)
 
-    def train_network(self, learning_rate, batch_size, mins=None, model_name=None):
+    def training_session(self, learning_rate, batch_size, session_iters):
+        for _ in range(session_iters):
+            self.zero_out_batch_gradient_sums()
+            mini_batch = random.sample(self.samples, batch_size)
+            for sample in mini_batch:
+                self.backpropagate(sample)
+            self.gradient_descent(learning_rate)
+
+    def train_network(self, learning_rate, batch_size, session_iters):
         start_time = time()
+        lowest_cost = self.ev.evaluate_network(start_time)
         try:
-            while not mins or (time() - start_time) / 60 < mins:
-                self.zero_out_batch_gradient_sums()
-                mini_batch = random.sample(self.samples, batch_size)
-                for sample in mini_batch:
-                    self.backpropagate(sample)
-                self.gradient_descent(learning_rate / batch_size)
-                if self.ev: self.ev.evaluate_network(start_time, model_name)
+            while True:
+                self.training_session(learning_rate, batch_size, session_iters)
+                new_cost = self.ev.evaluate_network(start_time)
+                if new_cost < lowest_cost:
+                    IO.save_model(self.nn, self.model_name)
+                    lowest_cost = new_cost
+                else:
+                    IO.load_model(self.model_name)
+                if self.training_mins:
+                    if (time() - start_time) / 60 < self.training_mins:
+                        break
         except KeyboardInterrupt:
             print('Training stopped early by user.')
-        if self.ev: self.ev.final_report(learning_rate, start_time, batch_size)
 
 
 class Network:
 
     def __init__(self, shape=None, model_name=None):
-        self.neurons, self.connections = self.get_model(shape, model_name)
+        model = self.get_model(shape, model_name)
+        self.neurons = model[0]
+        self.connections = model[1]
         self.features = None
 
     @staticmethod
     def get_model(shape, model_name):
         if model_name:
-            return IO.load_model(model_name)
+            if shape:
+                print('Ignoring shape parameter and loading model instead.')
+            loaded_model = IO.load_model(model_name)
+            return loaded_model
         elif shape:
-            return Architect.build(shape)
+            new_model = Architect.build(shape)
+            return new_model
         else:
             raise ValueError('Must supply either a shape or model_name.')
 
@@ -333,11 +322,9 @@ class Network:
 
 if __name__ == '__main__':
 
-    # need to change training so it loads the model any time it doesnt improve
-
     training_samples, testing_samples = IO.get_samples()
     network = Network(model_name='model01')
     evaluator = Evaluator(network, testing_samples)
-    evaluator.num_of_eval_samples = 10000
-    trainer = Trainer(network, training_samples, evaluator)
-    trainer.train_network(0.03, 1, model_name='model01')
+    evaluator.num_of_eval_samples = 3000
+    trainer = Trainer(network, evaluator, training_samples, 'model01')
+    trainer.train_network(0.035, 1, 3000)
