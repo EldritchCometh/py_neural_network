@@ -1,6 +1,6 @@
+import os
 import gzip
 import math
-import os
 import pickle
 import random
 from time import time
@@ -68,8 +68,8 @@ class Neuron:
         self.deriv_func = None
         self.activation = 0
         self.bias = 0
-        self.error_gradient = 0
-        self.batch_error_gradients_sum = 0
+        self.gradient = 0
+        self.gradient_batch_sum = 0
 
     def compute_and_set_activation(self):
         inc_weights = [ic.weight for ic in self.inc_conns]
@@ -77,15 +77,15 @@ class Neuron:
         weighted_sum = sum([w * a for w, a in zip(inc_weights, inc_activs)])
         self.activation = self.activ_func(weighted_sum + self.bias)
 
-    def compute_and_update_error_gradient(self):
+    def compute_and_update_gradient_values(self):
         out_weights = [oc.weight for oc in self.out_conns]
-        out_err_grd = [oc.target_neuron.error_gradient for oc in self.out_conns]
-        weighted_sum = sum([w * e for w, e in zip(out_weights, out_err_grd)])
-        self.error_gradient = self.deriv_func(self.activation) * weighted_sum
-        self.batch_error_gradients_sum += self.error_gradient
+        out_cost_grd = [oc.target_neuron.gradient for oc in self.out_conns]
+        weighted_sum = sum([w * e for w, e in zip(out_weights, out_cost_grd)])
+        self.gradient = self.deriv_func(self.activation) * weighted_sum
+        self.gradient_batch_sum += self.gradient
 
     def descend_bias_gradient(self, learning_rate):
-        self.bias -= self.batch_error_gradients_sum * learning_rate
+        self.bias -= self.gradient_batch_sum * learning_rate
 
 
 class Connection:
@@ -98,7 +98,7 @@ class Connection:
     def descend_weight_gradient(self, learning_rate):
         self.weight -= \
             self.source_neuron.activation * \
-            self.target_neuron.batch_error_gradients_sum * \
+            self.target_neuron.gradient_batch_sum * \
             learning_rate
 
 
@@ -183,13 +183,13 @@ class Evaluator:
         self.accuracy = None
         self.cost = None
         self.set_metrics(1000)
+        self.print_basic_report(time())
+        self.last_report_time = time()
         self.init_accuracy = self.accuracy
         self.init_cost = self.cost
         self.lowest_cost = self.cost
-        self.last_report_time = 0
-        self.report_freq = 10
-        self.num_of_eval_samples = 100
-        self.num_of_final_report_samples = 1000 
+        self.report_freq = 20
+        self.num_of_eval_samples = 1000
 
     def print_basic_report(self, start_time):
         elapsed = timedelta(seconds=round(time() - start_time))
@@ -197,10 +197,10 @@ class Evaluator:
               f'SSE: {round(self.cost, 3)}, '
               f'Elapsed Time: {elapsed}')
 
-    def get_accuracy(self, sample):
+    def classified_correctly(self, sample):
         return sample['one_hot'] == self.nn.one_hot(sample['pixels'])
 
-    def get_cost(self, sample):
+    def cost_function(self, sample):
         outputs = self.nn.output(sample['pixels'])
         targets = sample['one_hot']
         return sum([(o - t) ** 2 for o, t in zip(outputs, targets)])
@@ -209,8 +209,8 @@ class Evaluator:
         accuracy_sum, cost_sum = 0, 0
         for _ in range(num_of_samples):
             sample = random.choice(self.samples)
-            accuracy_sum += self.get_accuracy(sample)
-            cost_sum += self.get_cost(sample)
+            accuracy_sum += self.classified_correctly(sample)
+            cost_sum += self.cost_function(sample)
         self.accuracy = accuracy_sum / num_of_samples
         self.cost = cost_sum / num_of_samples
 
@@ -225,7 +225,7 @@ class Evaluator:
                 self.lowest_cost = self.cost
 
     def final_report(self, learning_rate, batch_size, start_time):
-        self.set_metrics(self.num_of_final_report_samples)
+        self.set_metrics(self.num_of_eval_samples)
         start = datetime.fromtimestamp(start_time).strftime("%H:%M:%S")
         end = datetime.fromtimestamp(time()).strftime("%H:%M:%S")
         elapsed = timedelta(seconds=round(time() - start_time))
@@ -251,26 +251,21 @@ class Trainer:
         self.ev = ev
         self.name = name
 
-    def zero_out_batch_error_gradient_sums(self):
+    def zero_out_batch_gradient_sums(self):
         for layer in self.nn.neurons[1:-1]:
             for neuron in layer:
-                neuron.batch_error_gradients_sum = 0
+                neuron.gradient_batch_sum = 0
 
-    def set_error_gradients_in_output_layer(self, sample):
+    def set_gradients_in_output_layer(self, sample):
         self.nn.output(sample['pixels'])
         for neuron, target in zip(self.nn.neurons[-1], sample['one_hot']):
-            neuron.error_gradient = neuron.activation - target
+            neuron.gradient = neuron.activation - target
 
-    def backpropagate(self):
+    def backpropagate(self, sample):
+        self.set_gradients_in_output_layer(sample)
         for layer in reversed(self.nn.neurons[1:-1]):
             for neuron in layer:
-                neuron.compute_and_update_error_gradient()
-
-    def backpropagation(self, mini_batch):
-        self.zero_out_batch_error_gradient_sums()
-        for sample in mini_batch:
-            self.set_error_gradients_in_output_layer(sample)
-            self.backpropagate()
+                neuron.compute_and_update_gradient_values()
 
     def gradient_descent(self, learning_rate):
         for neuron_layer in self.nn.neurons[1:]:
@@ -281,17 +276,20 @@ class Trainer:
                 for connection in conn_group:
                     connection.descend_weight_gradient(learning_rate)
 
-    def train_network(self, learning_rate, batch_size, mins, model_name=None):
+    def train_network(self, learning_rate, batch_size, mins=None, model_name=None):
         start_time = time()
         try:
-            while (time() - start_time) / 60 < mins:
+            while not mins or (time() - start_time) / 60 < mins:
+                self.zero_out_batch_gradient_sums()
                 mini_batch = random.sample(self.samples, batch_size)
-                self.backpropagation(mini_batch)
+                for sample in mini_batch:
+                    self.backpropagate(sample)
                 self.gradient_descent(learning_rate / batch_size)
                 if self.ev: self.ev.evaluate_network(start_time, model_name)
         except KeyboardInterrupt:
             print('Training stopped early by user.')
         if self.ev: self.ev.final_report(learning_rate, start_time, batch_size)
+
 
 class Network:
 
@@ -335,9 +333,11 @@ class Network:
 
 if __name__ == '__main__':
 
+    # need to change training so it loads the model any time it doesnt improve
+
     training_samples, testing_samples = IO.get_samples()
-    #network = Network(shape=[784, 16, 16, 10])
     network = Network(model_name='model01')
     evaluator = Evaluator(network, testing_samples)
+    evaluator.num_of_eval_samples = 10000
     trainer = Trainer(network, training_samples, evaluator)
-    trainer.train_network(0.01, 3, 1, 'model01')
+    trainer.train_network(0.03, 1, model_name='model01')
