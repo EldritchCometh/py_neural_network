@@ -57,6 +57,7 @@ class IO:
         neurons, connections = Architect.build(shape)
         cls.set_biases(neurons, models[model_name][0])
         cls.set_weights(connections, models[model_name][1])
+        print('Loading')
         return neurons, connections
 
 
@@ -153,9 +154,9 @@ class Architect:
     @staticmethod
     def set_activation_and_derivative_functions_in_neurons(neuron_layers):
         def relu_activation(x):
-            return max(0, x)
+            return max(x, x * 0.01)
         def relu_derivative(x):
-            return 1 if x > 0 else 0
+            return 1 if x > 0 else 0.01
         def identity(x):
             return x
         for neuron_layer in neuron_layers[1:-1]:
@@ -215,11 +216,10 @@ class Evaluator:
 
 class Trainer:
 
-    def __init__(self, neural_network, evaluator, samples, model_name):
+    def __init__(self, neural_network, evaluator, samples):
         self.nn = neural_network
         self.samples = samples
         self.ev = evaluator
-        self.model_name = model_name
         self.training_mins = None
 
     def zero_out_batch_gradient_sums(self):
@@ -256,6 +256,8 @@ class Trainer:
             self.gradient_descent(learning_rate)
 
     def train_network(self, learning_rate, batch_size, session_iters):
+        session_iters = int(session_iters / batch_size)
+        learning_rate /= batch_size
         start_time = time()
         lowest_cost = self.ev.evaluate_network(start_time)
         try:
@@ -266,7 +268,9 @@ class Trainer:
                     IO.save_model(self.nn, self.model_name)
                     lowest_cost = new_cost
                 else:
-                    IO.load_model(self.model_name)
+                    model = IO.load_model(self.model_name)
+                    self.nn.neurons = model[0]
+                    self.nn.connections = model[1]
                 if self.training_mins:
                     if (time() - start_time) / 60 < self.training_mins:
                         break
@@ -276,17 +280,16 @@ class Trainer:
 
 class Network:
 
-    def __init__(self, shape=None, model_name=None):
-        model = self.get_model(shape, model_name)
+    def __init__(self, model_name, shape=None):
+        model = self.get_model(model_name, shape)
         self.neurons = model[0]
         self.connections = model[1]
         self.features = None
 
     @staticmethod
     def get_model(shape, model_name):
-        if model_name:
-            if shape:
-                print('Ignoring shape parameter and loading model instead.')
+        if shape:
+            print('Creating new model.')
             loaded_model = IO.load_model(model_name)
             return loaded_model
         elif shape:
@@ -323,8 +326,8 @@ class Network:
 if __name__ == '__main__':
 
     training_samples, testing_samples = IO.get_samples()
-    network = Network(model_name='model01')
+    network = Network([28*28, 16, 16, 10])
     evaluator = Evaluator(network, testing_samples)
     evaluator.num_of_eval_samples = 3000
-    trainer = Trainer(network, evaluator, training_samples, 'model01')
-    trainer.train_network(0.035, 1, 3000)
+    trainer = Trainer(network, evaluator, training_samples)
+    trainer.train_network(100, 16, 3000)
