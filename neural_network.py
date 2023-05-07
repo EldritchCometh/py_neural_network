@@ -1,4 +1,5 @@
 import os
+import sys
 import gzip
 import math
 import pickle
@@ -7,13 +8,7 @@ from time import time
 from datetime import datetime, timedelta
 
 
-class IO:
-
-    @staticmethod
-    def get_samples():
-        with gzip.open('mnist_data.pkl.gz', 'rb') as f:
-            data = pickle.load(f)
-        return data['training_samples'], data['testing_samples']
+class Model:
 
     @staticmethod
     def get_biases(neurons):
@@ -37,17 +32,17 @@ class IO:
                     t_conn.weight = s_weight
 
     @classmethod
-    def save_model(cls, nn, model_name):
+    def save_model(cls, nn):
         models = {}
         if os.path.isfile('models.pkl'):
             with open('models.pkl', 'rb') as f:
                 models = pickle.load(f)
         biases = cls.get_biases(nn.neurons)
         weights = cls.get_weights(nn.connections)
-        models[model_name] = (biases, weights)
+        models[nn.model_name] = (biases, weights)
         with open('models.pkl', 'wb') as f:
             pickle.dump(models, f)
-        print('Saved!')
+        print(f'Saving model: \"{nn.model_name}\"')
 
     @classmethod
     def load_model(cls, model_name):
@@ -57,7 +52,7 @@ class IO:
         neurons, connections = Architect.build(shape)
         cls.set_biases(neurons, models[model_name][0])
         cls.set_weights(connections, models[model_name][1])
-        print('Loading')
+        print(f'Loading model: \"{model_name}\"')
         return neurons, connections
 
 
@@ -179,12 +174,12 @@ class Architect:
 
 class Evaluator:
 
-    def __init__(self, neural_network, samples):
+    def __init__(self, neural_network, samples, num_of_samples):
         self.nn = neural_network
         self.samples = samples
-        self.accuracy = None
-        self.cost = None
-        self.num_of_eval_samples = len(samples)
+        self.num_of_samples = num_of_samples
+        self.accuracy = 0
+        self.cost = 0
 
     def classified_correctly(self, sample):
         return sample['one_hot'] == self.nn.one_hot(sample['pixels'])
@@ -202,15 +197,16 @@ class Evaluator:
               f'Cost: {round(self.cost, 3)}, '
               f'Elapsed Time: {elapsed}')
 
-    def evaluate_network(self, start_time=None):
+    def evaluate_network(self, start_time=None, print_report=False):
         accuracy_sum, cost_sum = 0, 0
-        for _ in range(self.num_of_eval_samples):
+        for _ in range(self.num_of_samples):
             sample = random.choice(self.samples)
             accuracy_sum += self.classified_correctly(sample)
             cost_sum += self.cost_function(sample)
-        self.accuracy = accuracy_sum / self.num_of_eval_samples
-        self.cost = cost_sum / self.num_of_eval_samples
-        self.print_report(start_time)
+        self.accuracy = accuracy_sum / self.num_of_samples
+        self.cost = cost_sum / self.num_of_samples
+        if print_report:
+            self.print_report(start_time)
         return self.cost
 
 
@@ -256,26 +252,32 @@ class Trainer:
             self.gradient_descent(learning_rate)
 
     def train_network(self, learning_rate, batch_size, session_iters):
-        session_iters = int(session_iters / batch_size)
-        learning_rate /= batch_size
         start_time = time()
-        lowest_cost = self.ev.evaluate_network(start_time)
+        learning_rate /= batch_size
+        session_iters = int(session_iters / batch_size)
+        best_biases = Model.get_biases(self.nn.neurons)
+        best_weights = Model.get_weights(self.nn.connections)
+        lowest_cost = self.ev.evaluate_network(start_time, print_report=True)
         try:
             while True:
                 self.training_session(learning_rate, batch_size, session_iters)
-                new_cost = self.ev.evaluate_network(start_time)
-                if new_cost < lowest_cost:
-                    IO.save_model(self.nn, self.model_name)
-                    lowest_cost = new_cost
+                cost = self.ev.evaluate_network(start_time, print_report=True)
+                if cost < lowest_cost:
+                    print('New Best!')
+                    best_biases = Model.get_biases(self.nn.neurons)
+                    best_weights = Model.get_weights(self.nn.connections)
+                    lowest_cost = cost
                 else:
-                    model = IO.load_model(self.model_name)
-                    self.nn.neurons = model[0]
-                    self.nn.connections = model[1]
+                    Model.set_biases(self.nn.neurons, best_biases)
+                    Model.set_weights(self.nn.connections, best_weights)
                 if self.training_mins:
                     if (time() - start_time) / 60 < self.training_mins:
                         break
         except KeyboardInterrupt:
-            print('Training stopped early by user.')
+            print('Training stopped early by user')
+        Model.set_biases(self.nn.neurons, best_biases)
+        Model.set_weights(self.nn.connections, best_weights)
+        Model.save_model(self.nn)
 
 
 class Network:
@@ -284,19 +286,18 @@ class Network:
         model = self.get_model(model_name, shape)
         self.neurons = model[0]
         self.connections = model[1]
+        self.model_name = model_name
         self.features = None
 
     @staticmethod
-    def get_model(shape, model_name):
+    def get_model(model_name, shape):
         if shape:
-            print('Creating new model.')
-            loaded_model = IO.load_model(model_name)
-            return loaded_model
-        elif shape:
+            print('Creating new model')
             new_model = Architect.build(shape)
             return new_model
         else:
-            raise ValueError('Must supply either a shape or model_name.')
+            loaded_model = Model.load_model(model_name)
+            return loaded_model
 
     def set_features_in_input_layer(self):
         for neuron, feature in zip(self.neurons[0], self.features):
@@ -323,11 +324,16 @@ class Network:
         return [float(i == classification) for i in range(10)]
 
 
+def get_samples():
+    with gzip.open('mnist_data.pkl.gz', 'rb') as f:
+        data = pickle.load(f)
+    return data['training_samples'], data['testing_samples']
+
+
 if __name__ == '__main__':
 
-    training_samples, testing_samples = IO.get_samples()
-    network = Network([28*28, 16, 16, 10])
-    evaluator = Evaluator(network, testing_samples)
-    evaluator.num_of_eval_samples = 3000
+    training_samples, testing_samples = get_samples()
+    network = Network('model01', [28*28, 16, 16, 10])
+    evaluator = Evaluator(network, testing_samples, 3000)
     trainer = Trainer(network, evaluator, training_samples)
-    trainer.train_network(100, 16, 3000)
+    trainer.train_network(0.5, 16, 3000)
