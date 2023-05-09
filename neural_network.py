@@ -4,6 +4,7 @@ import gzip
 import math
 import pickle
 import random
+import numpy as np
 from time import time
 from datetime import datetime, timedelta
 
@@ -32,28 +33,32 @@ class Model:
                     t_conn.weight = s_weight
 
     @classmethod
-    def save_model(cls, nn):
-        models = {}
+    def save_model(cls, nn, model_name):
+        print(f'Saving model: \"{model_name}\"')
+        biases = cls.get_biases(nn.neurons)
+        weights = cls.get_weights(nn.connections)
         if os.path.isfile('models.pkl'):
             with open('models.pkl', 'rb') as f:
                 models = pickle.load(f)
-        biases = cls.get_biases(nn.neurons)
-        weights = cls.get_weights(nn.connections)
-        models[nn.model_name] = (biases, weights)
+        else:
+            models = {}
+        models[model_name] = (biases, weights)
         with open('models.pkl', 'wb') as f:
             pickle.dump(models, f)
-        print(f'Saving model: \"{nn.model_name}\"')
 
     @classmethod
     def load_model(cls, model_name):
-        with open('models.pkl', 'rb') as f:
-            models = pickle.load(f)
-        shape = [len(layer) for layer in models[model_name][0]]
-        neurons, connections = Architect.build(shape)
-        cls.set_biases(neurons, models[model_name][0])
-        cls.set_weights(connections, models[model_name][1])
         print(f'Loading model: \"{model_name}\"')
-        return neurons, connections
+        if os.path.isfile('models.pkl'):
+            with open('models.pkl', 'rb') as f:
+                models = pickle.load(f)
+        else:
+            raise ValueError("Models.pkl not found")
+        shape = [len(layer) for layer in models[model_name][0]]
+        nn = Network(shape)
+        cls.set_biases(nn.neurons, models[model_name][0])
+        cls.set_weights(nn.connections, models[model_name][1])
+        return nn
 
 
 class Neuron:
@@ -197,7 +202,7 @@ class Evaluator:
               f'Cost: {round(self.cost, 3)}, '
               f'Elapsed Time: {elapsed}')
 
-    def evaluate_network(self, start_time=None, print_report=False):
+    def evaluate_network(self, start_time=None, report=False):
         accuracy_sum, cost_sum = 0, 0
         for _ in range(self.num_of_samples):
             sample = random.choice(self.samples)
@@ -205,18 +210,20 @@ class Evaluator:
             cost_sum += self.cost_function(sample)
         self.accuracy = accuracy_sum / self.num_of_samples
         self.cost = cost_sum / self.num_of_samples
-        if print_report:
+        if report:
             self.print_report(start_time)
         return self.cost
 
 
 class Trainer:
 
-    def __init__(self, neural_network, evaluator, samples):
+    def __init__(self, neural_network, evaluator, samples, training_mins=None):
         self.nn = neural_network
         self.samples = samples
         self.ev = evaluator
-        self.training_mins = None
+        self.training_mins = training_mins
+        self.eval_freq_secs = 20
+        self.last_report = time()
 
     def zero_out_batch_gradient_sums(self):
         for layer in self.nn.neurons[1:-1]:
@@ -243,61 +250,38 @@ class Trainer:
                 for connection in conn_group:
                     connection.descend_weight_gradient(learning_rate)
 
-    def training_session(self, learning_rate, batch_size, session_iters):
-        for _ in range(session_iters):
-            self.zero_out_batch_gradient_sums()
-            mini_batch = random.sample(self.samples, batch_size)
-            for sample in mini_batch:
-                self.backpropagate(sample)
-            self.gradient_descent(learning_rate)
-
-    def train_network(self, learning_rate, batch_size, session_iters):
+    def train_network(self, learning_rate, batch_size, model_name=None):
         start_time = time()
         learning_rate /= batch_size
-        session_iters = int(session_iters / batch_size)
-        best_biases = Model.get_biases(self.nn.neurons)
-        best_weights = Model.get_weights(self.nn.connections)
-        lowest_cost = self.ev.evaluate_network(start_time, print_report=True)
+        lowest_sse = self.ev.evaluate_network(start_time, report=True)
         try:
             while True:
-                self.training_session(learning_rate, batch_size, session_iters)
-                cost = self.ev.evaluate_network(start_time, print_report=True)
-                if cost < lowest_cost:
-                    print('New Best!')
-                    best_biases = Model.get_biases(self.nn.neurons)
-                    best_weights = Model.get_weights(self.nn.connections)
-                    lowest_cost = cost
-                else:
-                    Model.set_biases(self.nn.neurons, best_biases)
-                    Model.set_weights(self.nn.connections, best_weights)
+                if time() - self.last_report > self.eval_freq_secs:
+                    sse = self.ev.evaluate_network(start_time, report=True)
+                    if model_name and sse < lowest_sse:
+                        Model.save_model(self.nn, model_name)
+                        lowest_sse = sse
+                    self.last_report = time()
+                self.zero_out_batch_gradient_sums()
+                mini_batch = random.sample(self.samples, batch_size)
+                for sample in mini_batch:
+                    self.backpropagate(sample)
+                self.gradient_descent(learning_rate)
                 if self.training_mins:
-                    if (time() - start_time) / 60 < self.training_mins:
+                    if (time() - start_time) / 60 > self.training_mins:
                         break
         except KeyboardInterrupt:
             print('Training stopped early by user')
-        Model.set_biases(self.nn.neurons, best_biases)
-        Model.set_weights(self.nn.connections, best_weights)
-        Model.save_model(self.nn)
+        return lowest_sse
 
 
 class Network:
 
-    def __init__(self, model_name, shape=None):
-        model = self.get_model(model_name, shape)
-        self.neurons = model[0]
-        self.connections = model[1]
-        self.model_name = model_name
+    def __init__(self, shape):
+        new_model = Architect.build(shape)
+        self.neurons = new_model[0]
+        self.connections = new_model[1]
         self.features = None
-
-    @staticmethod
-    def get_model(model_name, shape):
-        if shape:
-            print('Creating new model')
-            new_model = Architect.build(shape)
-            return new_model
-        else:
-            loaded_model = Model.load_model(model_name)
-            return loaded_model
 
     def set_features_in_input_layer(self):
         for neuron, feature in zip(self.neurons[0], self.features):
@@ -333,7 +317,54 @@ def get_samples():
 if __name__ == '__main__':
 
     training_samples, testing_samples = get_samples()
-    network = Network('model01', [28*28, 16, 16, 10])
-    evaluator = Evaluator(network, testing_samples, 3000)
-    trainer = Trainer(network, evaluator, training_samples)
-    trainer.train_network(0.5, 16, 3000)
+    network = Network([28*28, 16, 16, 10])
+    evaluator = Evaluator(network, testing_samples, 1000)
+    trainer = Trainer(network, evaluator, training_samples, 10)
+
+    outcomes = []
+    for i in range(6):
+        name = f"model{i + 1:02}"
+        sse = trainer.train_network(0.01, 1, name)
+        outcomes.append((name, sse))
+
+    '''
+    while True:
+        l_rate = bell_curve_value()
+        b_size = random.choice([1, random.randint(2, 32)])
+        iters = 10000
+        print('l_rate:', l_rate, ' b_size:', b_size, ' iters:', iters)
+        trainer.train_network(l_rate, b_size, iters)
+    '''
+    '''
+    def train_network(self, learning_rate, batch_size, session_iters):
+    start_time = time()
+    learning_rate /= batch_size
+    session_iters = int(session_iters / batch_size)
+    best_biases = Model.get_biases(self.nn.neurons)
+    best_weights = Model.get_weights(self.nn.connections)
+    lowest_cost = self.ev.evaluate_network(start_time, print_report=True)
+    try:
+        while True:
+            self.training_session(learning_rate, batch_size, session_iters)
+            cost = self.ev.evaluate_network(start_time, print_report=True)
+            if cost < lowest_cost - 0.01:
+                print('New Best!')
+                best_biases = Model.get_biases(self.nn.neurons)
+                best_weights = Model.get_weights(self.nn.connections)
+                lowest_cost = cost
+            else:
+                Model.set_biases(self.nn.neurons, best_biases)
+                Model.set_weights(self.nn.connections, best_weights)
+            if self.training_mins:
+                if (time() - start_time) / 60 > self.training_mins:
+                    break
+    except KeyboardInterrupt:
+        print('Training stopped early by user')
+    return lowest_cost
+    '''
+    '''
+    def bell_curve_value(mean=0.01, sd=0.3):
+    log_mean = np.log(mean)
+    log_val = np.random.normal(loc=log_mean, scale=sd)
+    return np.exp(log_val)
+    '''
